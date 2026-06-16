@@ -198,7 +198,7 @@ details[open] summary::before{content:'▾ '}
       <div class="tab active" data-tab="special" onclick="switchTab('special')">공용실<span class="b" id="tab-special-b">0</span></div>
       <div class="tab" data-tab="overnight" onclick="switchTab('overnight')">외박<span class="b" id="tab-over-b">0</span></div>
       <div class="tab" data-tab="absent" onclick="switchTab('absent')">결석<span class="b" id="tab-absent-b">0</span></div>
-      <div class="tab" data-tab="history" onclick="switchTab('history')">기록<span class="b" id="tab-history-b">0</span></div>
+      <div class="tab" data-tab="history" onclick="switchTab('history')">히스토리<span class="b" id="tab-history-b">0</span></div>
     </div>
 
     <div class="tab-body" id="body-special">
@@ -273,7 +273,7 @@ const seats = {
   "B042":"김효은","B041":"공다영","B040":"김우림","B039":"최서영","B038":"이지영","B037":null,
   "B036":"에네","B035":"전서아","B034":null,"B033":"신은채","B032":"이지우","B031":null,
   "B030":"천지우","B029":"정여진","B028":"김도연","B027":"전슬아","B026":"이하윤","B025":null,
-  "B024":"이재연","B023":null,"B022":"김예은","B021":"김지우","B020":"이유경","B019":null,
+  "B024":"이재연","B023":null,"B022":null,"B021":"김지우","B020":"이유경","B019":null,
   "B018":"이하얀","B017":"오연서","B016":"노유주","B015":null,"B014":"서시율","B013":null,
   "B012":"남은율","B011":"한지우","B010":"김수희","B009":"이채현","B008":"안이현","B007":null,
   "B006":null,"B005":null,"B004":null,"B003":null,"B002":null,"B001":null,
@@ -324,7 +324,7 @@ const overOthers={};
 const overIgnored=[];
 
 /* ── Firebase 초기화 ── */
-let firebaseReady=false, commonRef=null, overnightRef=null, absentRef=null, settingsRef=null, historyRef=null;
+let firebaseReady=false, commonRef=null, overnightRef=null, absentRef=null, settingsRef=null, historyRef=null, currentDatabaseDate=null;
 const historyList=[];
 
 function fbKey(str){ return (str||'').replace(/[.#$/\[\]]/g,'_'); }
@@ -415,16 +415,32 @@ function registerListeners(){
       });
       return;
     }
-    // 데이터베이스 날짜가 과거의 날짜이면 자동으로 오늘 날짜로 갱신
-    if(data.studyDate && data.studyDate < todayStr){
+    const newDate = data.studyDate;
+    // 데이터베이스 날짜가 과거의 날짜이면 자동으로 오늘 날짜로 갱신하고, 일일 데이터(공용실, 결석)를 초기화
+    if(newDate && newDate < todayStr){
       settingsRef.update({ studyDate: todayStr });
+      if(commonRef) commonRef.remove();
+      if(absentRef) absentRef.remove();
       return;
     }
+    currentDatabaseDate = newDate;
     if(data.studyDate) document.getElementById('study-date').value=data.studyDate;
     if(data.studyStart) document.getElementById('study-start').value=data.studyStart;
     if(data.studyEnd) document.getElementById('study-end').value=data.studyEnd;
     scheduleRefresh();
   });
+  
+  function checkMidnightReset(){
+    if(!firebaseReady || !currentDatabaseDate) return;
+    const todayStr = getTodayStr();
+    if(currentDatabaseDate < todayStr){
+      settingsRef.update({ studyDate: todayStr });
+      if(commonRef) commonRef.remove();
+      if(absentRef) absentRef.remove();
+    }
+  }
+  setInterval(checkMidnightReset, 30000);
+  window.addEventListener('focus', checkMidnightReset);
   // 기록 리스너
   historyRef.limitToLast(50).on('value',snap=>{
     historyList.length=0;
@@ -441,6 +457,36 @@ function registerListeners(){
 }
 
 /* ── 유틸리티 ── */
+function getIntegratedText(){
+  const specialSeats=Object.keys(timeline).filter(s=>!overnight[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
+  const overSeats=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
+  const absentSorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
+  const dStr = nowStr();
+  let t=`[B실 출결 명단] ${dStr}\n공용실 출타 ${specialSeats.length}명 / 외박 ${overSeats.length}명 / 결석 ${absentSorted.length}명\n`;
+  if(specialSeats.length){
+    t+=`\n■ 공용실 출타 (${specialSeats.length}명)\n`;
+    specialSeats.forEach((seat,i)=>{
+      const tl=timeline[seat];
+      const places=[...new Set(tl.entries.map(e=>shortPlace(e.place)))].join(', ');
+      t+=`${i+1}. ${tl.sid||seat} ${tl.name}${tl.ban?`(${tl.ban}반)`:''} — ${places}\n`;
+    });
+  }
+  if(overSeats.length){
+    t+=`\n■ 외박 (${overSeats.length}명)\n`;
+    overSeats.forEach((seat,i)=>{
+      const o=overnight[seat];
+      t+=`${i+1}. ${o.sid||seat} ${o.name}${o.ban?`(${o.ban}반)`:''} — 외박\n`;
+    });
+  }
+  if(absentSorted.length){
+    t+=`\n■ 결석 (${absentSorted.length}명)\n`;
+    absentSorted.forEach((id,i)=>{
+      t+=`${i+1}. ${seatToSid[id]||id} ${seats[id]}\n`;
+    });
+  }
+  return { text: t, date: dStr, specialCnt: specialSeats.length, overCnt: overSeats.length, absentCnt: absentSorted.length };
+}
 function parseSid(sid){
   if(!sid) return {grade:null,ban:null,num:null};
   const parts=(''+sid).split(/[_\-.]/).filter(Boolean);
@@ -477,11 +523,19 @@ function classifyOver(){
 }
 function onStudyChange(){
   if(firebaseReady){
-    settingsRef.update({
-      studyDate:document.getElementById('study-date').value,
+    const newDate = document.getElementById('study-date').value;
+    const updates = {
       studyStart:document.getElementById('study-start').value,
       studyEnd:document.getElementById('study-end').value
-    });
+    };
+    if(newDate !== currentDatabaseDate){
+      updates.studyDate = newDate;
+      settingsRef.update(updates);
+      if(commonRef) commonRef.remove();
+      if(absentRef) absentRef.remove();
+    } else {
+      settingsRef.update(updates);
+    }
   }else{ classifyOver(); refreshAll(); }
 }
 function resolveSeat(name,info){
@@ -783,7 +837,8 @@ function copyAbsent(){
   const sorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
   const text = `[B실 학습관 결석 명단] ${nowStr()}\n총 ${filteredAbsent.length}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]}`).join('\n');
   doCopy(text);
-  saveHistory('결석 복사', text, `결석 ${filteredAbsent.length}명`);
+  const integ = getIntegratedText();
+  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function copyHits(){
   if(allRecords.length===0){showToast('누적된 명단이 없습니다');return;}
@@ -794,45 +849,22 @@ function copyHits(){
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     t+=`\n■ ${slot} (B실 ${bIn.length}명)\n`+(bIn.length?bIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
-  saveHistory('공용실 복사', t, `시간대 ${slotList.length}개 / B실 출타`);
+  const integ = getIntegratedText();
+  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function copyOver(){
   const bKeys=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
   if(!bKeys.length){showToast('외박 학생이 없습니다');return;}
   const text = `[B실 외박 명단] ${nowStr()}\n총 ${bKeys.length}명\n\n`+bKeys.map((seat,i)=>{const o=overnight[seat];return `${i+1}. ${o.sid} ${o.name}${o.ban?`(${o.ban}반)`:''} [${seat}] — ${dShort(o.start)} ~ ${dShort(o.end)}`;}).join('\n');
   doCopy(text);
-  saveHistory('외박 복사', text, `외박 ${bKeys.length}명`);
+  const integ = getIntegratedText();
+  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function copyIntegrated(){
-  const specialSeats=Object.keys(timeline).filter(s=>!overnight[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
-  const overSeats=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
-  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
-  const absentSorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
-  if(specialSeats.length===0&&overSeats.length===0&&absentSorted.length===0){showToast('복사할 명단이 없습니다');return;}
-  let t=`[B실 출결 명단] ${nowStr()}\n공용실 출타 ${specialSeats.length}명 / 외박 ${overSeats.length}명 / 결석 ${absentSorted.length}명\n`;
-  if(specialSeats.length){
-    t+=`\n■ 공용실 출타 (${specialSeats.length}명)\n`;
-    specialSeats.forEach((seat,i)=>{
-      const tl=timeline[seat];
-      const places=[...new Set(tl.entries.map(e=>shortPlace(e.place)))].join(', ');
-      t+=`${i+1}. ${tl.sid||seat} ${tl.name}${tl.ban?`(${tl.ban}반)`:''} — ${places}\n`;
-    });
-  }
-  if(overSeats.length){
-    t+=`\n■ 외박 (${overSeats.length}명)\n`;
-    overSeats.forEach((seat,i)=>{
-      const o=overnight[seat];
-      t+=`${i+1}. ${o.sid||seat} ${o.name}${o.ban?`(${o.ban}반)`:''} — 외박\n`;
-    });
-  }
-  if(absentSorted.length){
-    t+=`\n■ 결석 (${absentSorted.length}명)\n`;
-    absentSorted.forEach((id,i)=>{
-      t+=`${i+1}. ${seatToSid[id]||id} ${seats[id]}\n`;
-    });
-  }
-  doCopy(t);
-  saveHistory('통합 복사', t, `공용실 ${specialSeats.length} / 외박 ${overSeats.length} / 결석 ${absentSorted.length}`);
+  const integ = getIntegratedText();
+  if(integ.specialCnt===0 && integ.overCnt===0 && integ.absentCnt===0){showToast('복사할 명단이 없습니다');return;}
+  doCopy(integ.text);
+  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function nowStr(){const n=new Date();return `${n.getFullYear()}.${String(n.getMonth()+1).padStart(2,'0')}.${String(n.getDate()).padStart(2,'0')} ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;}
 function doCopy(text){if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(()=>showToast('클립보드에 복사되었습니다')).catch(()=>fallbackCopy(text));}else fallbackCopy(text);}
@@ -870,8 +902,7 @@ function renderHistoryPanel(){
     return `
       <div class="item" style="flex-direction:column; align-items:stretch; gap:6px; padding:10px; border-color:#e8e6e0; flex: 1 1 calc(25% - 8px); min-width:240px; max-width:calc(33.33% - 8px); margin-bottom:0;">
         <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-          <span style="font-weight:700; color:#5a4bd0; font-size:11.5px;">📋 ${h.type}</span>
-          <span style="font-size:10px; color:#999; margin-left:8px;">${h.dateStr.split(' ')[1] || h.dateStr}</span>
+          <span style="font-weight:700; color:#5a4bd0; font-size:11.5px;">📋 ${h.type && h.type.includes('.') ? h.type : h.dateStr}</span>
           <span class="x" onclick="deleteHistory(${h.timestamp}); event.stopPropagation();" style="margin-left:auto; color:#ccc;" title="삭제">✕</span>
         </div>
         <div style="font-size:11px; color:#666; font-weight:600; text-align:left;">${h.summary || '상세 내역'}</div>
