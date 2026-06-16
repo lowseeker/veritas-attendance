@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>B실 학습관 — 출결 / 공용실 / 외박</title>
+<title>2학년 여학생 B실 — 출결 / 공용실 / 외박</title>
 <!-- Firebase SDK (compat) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
@@ -141,13 +141,13 @@ details[open] summary::before{content:'▾ '}
 
 <div class="header">
   <div>
-    <div class="title">B실 학습관 — 출결 / 공용실 / 외박</div>
+    <div class="title">2학년 여학생 B실 — 출결 / 공용실 / 외박</div>
     <div class="subtitle">공용실은 시간대별 누적 · 외박 명단 별도 관리 · 좌석 클릭으로 결석 표시</div>
   </div>
   <div class="stats">
     <div class="stat">B실 <b id="total-count">0</b></div>
     <div class="stat slot">시간대 <b id="slot-count">0</b></div>
-    <div class="stat special">출타 <b id="special-count">0</b></div>
+    <div class="stat special">공용실 <b id="special-count">0</b></div>
     <div class="stat over">외박 <b id="over-count">0</b></div>
     <div class="stat absent">결석 <b id="absent-count">0</b></div>
     <button class="btn-reset" onclick="resetAll()">결석 초기화</button>
@@ -234,7 +234,7 @@ details[open] summary::before{content:'▾ '}
 
 <div class="main">
   <div class="seating-wrap">
-    <div class="seating-label">좌석 배치도 — <span style="color:#5a4bd0">보라 = 공용실 출타</span> · <span style="color:#c77400">주황 = 외박</span> · <span style="color:#b03030">빨강 = 결석</span></div>
+    <div class="seating-label">좌석 배치도 — <span style="color:#5a4bd0">보라 = 공용실</span> · <span style="color:#c77400">주황 = 외박</span> · <span style="color:#b03030">빨강 = 결석</span></div>
     <div class="seat-grid" id="seat-grid"></div>
     <div class="door-area">▲ 출입구</div>
   </div>
@@ -463,9 +463,9 @@ function getIntegratedText(){
   const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
   const absentSorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
   const dStr = nowStr();
-  let t=`[B실 출결 명단] ${dStr}\n공용실 출타 ${specialSeats.length}명 / 외박 ${overSeats.length}명 / 결석 ${absentSorted.length}명\n`;
+  let t=`[2학년 여학생 B실 출결 명단] ${dStr}\n공용실 ${specialSeats.length}명 / 외박 ${overSeats.length}명 / 결석 ${absentSorted.length}명\n`;
   if(specialSeats.length){
-    t+=`\n■ 공용실 출타 (${specialSeats.length}명)\n`;
+    t+=`\n■ 공용실 (${specialSeats.length}명)\n`;
     specialSeats.forEach((seat,i)=>{
       const tl=timeline[seat];
       const places=[...new Set(tl.entries.map(e=>shortPlace(e.place)))].join(', ');
@@ -743,8 +743,8 @@ function updateHeaderCounts(){
   document.getElementById('tab-special-b').textContent=Object.keys(timeline).filter(s=>!overnight[s]).length;
   document.getElementById('tab-over-b').textContent=Object.keys(overnight).length;
   document.getElementById('parse-info').innerHTML=
-    `공용실: 누적 ${allRecords.length}건 · <b style="color:#1f7a4d">시간대 ${slots.size}</b> · <b style="color:#5a4bd0">출타 ${Object.keys(timeline).filter(s=>!overnight[s]).length}명</b> &nbsp;|&nbsp; 외박: <b style="color:#c77400">B실 ${Object.keys(overnight).length}명</b>`;
-  document.getElementById('head-info').textContent=`(시간대 ${slots.size} · 출타 ${Object.keys(timeline).filter(s=>!overnight[s]).length} · 외박 ${Object.keys(overnight).length})`;
+    `공용실: 누적 ${allRecords.length}건 · <b style="color:#1f7a4d">시간대 ${slots.size}</b> · <b style="color:#5a4bd0">공용실 ${Object.keys(timeline).filter(s=>!overnight[s]).length}명</b> &nbsp;|&nbsp; 외박: <b style="color:#c77400">B실 ${Object.keys(overnight).length}명</b>`;
+  document.getElementById('head-info').textContent=`(시간대 ${slots.size} · 공용실 ${Object.keys(timeline).filter(s=>!overnight[s]).length} · 외박 ${Object.keys(overnight).length})`;
 }
 function stTag(s){return s?`<span class="st ${s==='O'?'o':'x'}">${s}</span>`:'<span class="st"></span>';}
 
@@ -753,7 +753,7 @@ function renderMatchPanel(){
   if(allRecords.length===0){ c.innerHTML='<div class="empty-msg"><div class="empty-icon">🔍</div>공용실 명단을 붙여넣고<br><b>공용실 추가</b>를 누르면<br>시간대별로 누적됩니다.</div>'; return; }
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
   const outCnt=Object.keys(timeline).filter(s=>!overnight[s]).length;
-  let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · B실 출타 <b style="color:#5a4bd0">${outCnt}</b>명</div><div class="scroll">`;
+  let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · B실 공용실 <b style="color:#5a4bd0">${outCnt}</b>명</div><div class="scroll">`;
   slotList.forEach(slot=>{
     // Filter out overnight students from common room display list (Priority: Overnight > Common Room)
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
@@ -773,7 +773,7 @@ function renderMatchPanel(){
   if(!tlKeys.length) html+='<div style="font-size:11px;color:#bbb;padding:4px">없음</div>';
   html+='</div></div></details>';
   c.innerHTML=html;
-  c.innerHTML+=`<button class="btn-copy" onclick="copyHits()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>시간대별 B실 출타 복사</button>`;
+  c.innerHTML+=`<button class="btn-copy" onclick="copyHits()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>시간대별 B실 공용실 복사</button>`;
 }
 
 function renderOverPanel(){
@@ -835,36 +835,36 @@ function copyAbsent(){
   const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
   if(filteredAbsent.length===0){showToast('결석 학생이 없습니다');return;}
   const sorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
-  const text = `[B실 학습관 결석 명단] ${nowStr()}\n총 ${filteredAbsent.length}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]}`).join('\n');
+  const text = `[2학년 여학생 B실 결석 명단] ${nowStr()}\n총 ${filteredAbsent.length}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]}`).join('\n');
   doCopy(text);
   const integ = getIntegratedText();
-  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function copyHits(){
   if(allRecords.length===0){showToast('누적된 명단이 없습니다');return;}
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
-  let t=`[B실 공용실 출타 — 시간대별 누적] ${nowStr()}\n시간대 ${slotList.length}개\n`;
+  let t=`[2학년 여학생 B실 공용실 — 시간대별 누적] ${nowStr()}\n시간대 ${slotList.length}개\n`;
   slotList.forEach(slot=>{
     // Filter out overnight students from common room copy list (Priority: Overnight > Common Room)
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     t+=`\n■ ${slot} (B실 ${bIn.length}명)\n`+(bIn.length?bIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
   const integ = getIntegratedText();
-  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function copyOver(){
   const bKeys=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
   if(!bKeys.length){showToast('외박 학생이 없습니다');return;}
-  const text = `[B실 외박 명단] ${nowStr()}\n총 ${bKeys.length}명\n\n`+bKeys.map((seat,i)=>{const o=overnight[seat];return `${i+1}. ${o.sid} ${o.name}${o.ban?`(${o.ban}반)`:''} [${seat}] — ${dShort(o.start)} ~ ${dShort(o.end)}`;}).join('\n');
+  const text = `[2학년 여학생 B실 외박 명단] ${nowStr()}\n총 ${bKeys.length}명\n\n`+bKeys.map((seat,i)=>{const o=overnight[seat];return `${i+1}. ${o.sid} ${o.name}${o.ban?`(${o.ban}반)`:''} [${seat}] — ${dShort(o.start)} ~ ${dShort(o.end)}`;}).join('\n');
   doCopy(text);
   const integ = getIntegratedText();
-  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function copyIntegrated(){
   const integ = getIntegratedText();
   if(integ.specialCnt===0 && integ.overCnt===0 && integ.absentCnt===0){showToast('복사할 명단이 없습니다');return;}
   doCopy(integ.text);
-  saveHistory(integ.date, integ.text, `통합본 (출타 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 function nowStr(){const n=new Date();return `${n.getFullYear()}.${String(n.getMonth()+1).padStart(2,'0')}.${String(n.getDate()).padStart(2,'0')} ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;}
 function doCopy(text){if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(()=>showToast('클립보드에 복사되었습니다')).catch(()=>fallbackCopy(text));}else fallbackCopy(text);}
