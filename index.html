@@ -86,8 +86,8 @@ textarea:focus{outline:none;border-color:#aaa;background:#fff}
 .tab-body{padding:14px}
 .scroll{max-height:220px;overflow-y:auto}
 .items-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
-.items-grid .item, #absent-list.scroll .item{margin-bottom:0;flex:1 1 calc(25% - 8px);min-width:200px;max-width:calc(33.33% - 8px)}
-#absent-list.scroll{display:flex;flex-wrap:wrap;gap:8px}
+.items-grid .item, #absent-list.scroll .item, #history-content.scroll .item{margin-bottom:0;flex:1 1 calc(25% - 8px);min-width:200px;max-width:calc(33.33% - 8px)}
+#absent-list.scroll, #history-content.scroll{display:flex;flex-wrap:wrap;gap:8px}
 .summary{font-size:12px;color:#555;background:#f6f4fd;border:1px solid #e7e1f8;border-radius:8px;padding:8px 10px;margin-bottom:12px;line-height:1.6}
 .summary.over{background:#fff6ea;border-color:#f3dfbf}
 .slot{margin-bottom:12px}
@@ -198,6 +198,7 @@ details[open] summary::before{content:'▾ '}
       <div class="tab active" data-tab="special" onclick="switchTab('special')">공용실<span class="b" id="tab-special-b">0</span></div>
       <div class="tab" data-tab="overnight" onclick="switchTab('overnight')">외박<span class="b" id="tab-over-b">0</span></div>
       <div class="tab" data-tab="absent" onclick="switchTab('absent')">결석<span class="b" id="tab-absent-b">0</span></div>
+      <div class="tab" data-tab="history" onclick="switchTab('history')">기록<span class="b" id="tab-history-b">0</span></div>
     </div>
 
     <div class="tab-body" id="body-special">
@@ -215,6 +216,13 @@ details[open] summary::before{content:'▾ '}
         결석 명단 복사
       </button>
     </div>
+
+    <div class="tab-body" id="body-history" style="display:none">
+      <div class="scroll" id="history-content">
+        <div class="empty-msg"><div class="empty-icon">📜</div>저장된 복사 기록이 없습니다.</div>
+      </div>
+    </div>
+
     <div style="padding:0 14px 14px;border-top:1px solid #eee">
       <button class="btn-copy" onclick="copyIntegrated()" style="background:#5a4bd0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -316,7 +324,8 @@ const overOthers={};
 const overIgnored=[];
 
 /* ── Firebase 초기화 ── */
-let firebaseReady=false, commonRef=null, overnightRef=null, absentRef=null, settingsRef=null;
+let firebaseReady=false, commonRef=null, overnightRef=null, absentRef=null, settingsRef=null, historyRef=null;
+const historyList=[];
 
 function fbKey(str){ return (str||'').replace(/[.#$/\[\]]/g,'_'); }
 
@@ -334,6 +343,7 @@ function initFirebase(){
     overnightRef=db.ref('attendance/overnight');
     absentRef=db.ref('attendance/absent');
     settingsRef=db.ref('attendance/settings');
+    historyRef=db.ref('attendance/history');
     firebaseReady=true;
     db.ref('.info/connected').on('value',snap=>{
       const c=snap.val();
@@ -350,8 +360,7 @@ function initFirebase(){
 }
 
 function localInit(){
-  const n=new Date();
-  document.getElementById('study-date').value=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+  document.getElementById('study-date').value=getTodayStr();
   renderGrid(); updateAbsentPanel(); updateHeaderCounts();
 }
 
@@ -398,18 +407,36 @@ function registerListeners(){
   // 설정 리스너
   settingsRef.on('value',snap=>{
     const data=snap.val();
+    const todayStr=getTodayStr();
     if(!data){
-      const n=new Date();
       settingsRef.set({
-        studyDate:`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`,
+        studyDate:todayStr,
         studyStart:'19:00', studyEnd:'21:30'
       });
+      return;
+    }
+    // 데이터베이스 날짜가 과거의 날짜이면 자동으로 오늘 날짜로 갱신
+    if(data.studyDate && data.studyDate < todayStr){
+      settingsRef.update({ studyDate: todayStr });
       return;
     }
     if(data.studyDate) document.getElementById('study-date').value=data.studyDate;
     if(data.studyStart) document.getElementById('study-start').value=data.studyStart;
     if(data.studyEnd) document.getElementById('study-end').value=data.studyEnd;
     scheduleRefresh();
+  });
+  // 기록 리스너
+  historyRef.limitToLast(50).on('value',snap=>{
+    historyList.length=0;
+    const data=snap.val()||{};
+    Object.entries(data).forEach(([key, h])=>{
+      h.timestamp = +key;
+      historyList.push(h);
+    });
+    historyList.sort((a,b)=>b.timestamp-a.timestamp);
+    const badge = document.getElementById('tab-history-b');
+    if(badge) badge.textContent=historyList.length;
+    renderHistoryPanel();
   });
 }
 
@@ -726,7 +753,10 @@ function renderOverPanel(){
 
 function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
-  ['special','overnight','absent'].forEach(n=>{document.getElementById('body-'+n).style.display=(n===name)?'block':'none';});
+  ['special','overnight','absent','history'].forEach(n=>{
+    const el=document.getElementById('body-'+n);
+    if(el) el.style.display=(n===name)?'block':'none';
+  });
 }
 function resetAccum(){
   if(allRecords.length===0 && Object.keys(overAll).length===0)return;
@@ -751,7 +781,9 @@ function copyAbsent(){
   const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
   if(filteredAbsent.length===0){showToast('결석 학생이 없습니다');return;}
   const sorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
-  doCopy(`[B실 학습관 결석 명단] ${nowStr()}\n총 ${filteredAbsent.length}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]}`).join('\n'));
+  const text = `[B실 학습관 결석 명단] ${nowStr()}\n총 ${filteredAbsent.length}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]}`).join('\n');
+  doCopy(text);
+  saveHistory('결석 복사', text, `결석 ${filteredAbsent.length}명`);
 }
 function copyHits(){
   if(allRecords.length===0){showToast('누적된 명단이 없습니다');return;}
@@ -762,11 +794,14 @@ function copyHits(){
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     t+=`\n■ ${slot} (B실 ${bIn.length}명)\n`+(bIn.length?bIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
+  saveHistory('공용실 복사', t, `시간대 ${slotList.length}개 / B실 출타`);
 }
 function copyOver(){
   const bKeys=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
   if(!bKeys.length){showToast('외박 학생이 없습니다');return;}
-  doCopy(`[B실 외박 명단] ${nowStr()}\n총 ${bKeys.length}명\n\n`+bKeys.map((seat,i)=>{const o=overnight[seat];return `${i+1}. ${o.sid} ${o.name}${o.ban?`(${o.ban}반)`:''} [${seat}] — ${dShort(o.start)} ~ ${dShort(o.end)}`;}).join('\n'));
+  const text = `[B실 외박 명단] ${nowStr()}\n총 ${bKeys.length}명\n\n`+bKeys.map((seat,i)=>{const o=overnight[seat];return `${i+1}. ${o.sid} ${o.name}${o.ban?`(${o.ban}반)`:''} [${seat}] — ${dShort(o.start)} ~ ${dShort(o.end)}`;}).join('\n');
+  doCopy(text);
+  saveHistory('외박 복사', text, `외박 ${bKeys.length}명`);
 }
 function copyIntegrated(){
   const specialSeats=Object.keys(timeline).filter(s=>!overnight[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
@@ -797,11 +832,78 @@ function copyIntegrated(){
     });
   }
   doCopy(t);
+  saveHistory('통합 복사', t, `공용실 ${specialSeats.length} / 외박 ${overSeats.length} / 결석 ${absentSorted.length}`);
 }
 function nowStr(){const n=new Date();return `${n.getFullYear()}.${String(n.getMonth()+1).padStart(2,'0')}.${String(n.getDate()).padStart(2,'0')} ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;}
 function doCopy(text){if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(text).then(()=>showToast('클립보드에 복사되었습니다')).catch(()=>fallbackCopy(text));}else fallbackCopy(text);}
 function fallbackCopy(text){const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;top:0;left:0;opacity:0';document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');showToast('클립보드에 복사되었습니다');}catch(e){showToast('복사 실패 — 직접 선택해 복사하세요');}document.body.removeChild(ta);}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+
+/* ── 기록 및 유틸 ── */
+function getTodayStr(){
+  const n=new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
+function saveHistory(type, text, summary){
+  if(!firebaseReady) return;
+  const now = new Date();
+  const dateStr = nowStr();
+  const key = now.getTime();
+  firebase.database().ref('attendance/history/' + key).set({
+    dateStr: dateStr,
+    type: type,
+    summary: summary || '',
+    text: text
+  });
+}
+const historyTextMap = {};
+function renderHistoryPanel(){
+  const c = document.getElementById('history-content');
+  if(historyList.length === 0){
+    c.innerHTML = '<div class="empty-msg"><div class="empty-icon">📜</div>저장된 복사 기록이 없습니다.</div>';
+    return;
+  }
+  historyList.forEach(h => {
+    historyTextMap[h.timestamp] = h.text;
+  });
+  c.innerHTML = '<div class="scroll" id="history-content-scroll" style="display:flex; flex-wrap:wrap; gap:8px; width:100%;">' + historyList.map(h => {
+    return `
+      <div class="item" style="flex-direction:column; align-items:stretch; gap:6px; padding:10px; border-color:#e8e6e0; flex: 1 1 calc(25% - 8px); min-width:240px; max-width:calc(33.33% - 8px); margin-bottom:0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <span style="font-weight:700; color:#5a4bd0; font-size:11.5px;">📋 ${h.type}</span>
+          <span style="font-size:10px; color:#999; margin-left:8px;">${h.dateStr.split(' ')[1] || h.dateStr}</span>
+          <span class="x" onclick="deleteHistory(${h.timestamp}); event.stopPropagation();" style="margin-left:auto; color:#ccc;" title="삭제">✕</span>
+        </div>
+        <div style="font-size:11px; color:#666; font-weight:600; text-align:left;">${h.summary || '상세 내역'}</div>
+        <div style="display:flex; gap:6px; margin-top:4px; width:100%;">
+          <button class="btn btn-ghost" onclick="copyHistoryText(${h.timestamp})" style="font-size:11px; padding:5px 8px; flex:1; height:auto; min-width:0; background:#fbfbf9; border:1px solid #ddd;">다시 복사</button>
+          <button class="btn btn-ghost" onclick="toggleHistoryText(${h.timestamp})" style="font-size:11px; padding:5px 8px; flex:1; height:auto; min-width:0; background:#fbfbf9; border:1px solid #ddd;">내용 보기</button>
+        </div>
+        <pre id="history-text-${h.timestamp}" style="display:none; margin-top:6px; padding:8px; background:#f5f4f0; border-radius:6px; font-size:10px; white-space:pre-wrap; word-break:break-all; font-family:monospace; color:#333; max-height:120px; overflow-y:auto; border:1px solid #e0ddd6; text-align:left; width:100%;"></pre>
+      </div>
+    `;
+  }).join('') + '</div>';
+}
+function copyHistoryText(timestamp){
+  const txt = historyTextMap[timestamp];
+  if(txt) { doCopy(txt); }
+}
+function toggleHistoryText(timestamp){
+  const pre = document.getElementById('history-text-' + timestamp);
+  if(!pre) return;
+  if(pre.style.display === 'none'){
+    pre.textContent = historyTextMap[timestamp];
+    pre.style.display = 'block';
+  } else {
+    pre.style.display = 'none';
+  }
+}
+function deleteHistory(timestamp){
+  if(!confirm('이 기록을 삭제할까요?')) return;
+  if(firebaseReady){
+    firebase.database().ref('attendance/history/' + timestamp).remove();
+  }
+}
 
 /* ── 시작 ── */
 initFirebase();
