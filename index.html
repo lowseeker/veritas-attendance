@@ -276,7 +276,7 @@ const seats = {
   "B090":null,"B091":"홍수빈","B092":"이지윤","B093":"한가민",
   "B094":null,"B095":"윤혜린","B096":null,"B097":"이수현","B098":"김다연","B099":"김민희",
   "B100":null,"B101":"이소연","B102":"김지윤","B103":"정시우","B104":"이도경",
-  "B105":"교사","B106":null,"B107":"이시현","B108":null,"B109":null
+  "B105":"교사","B106":null,"B107":null,"B108":"이시현","B109":null
 };
 const leftRows = [
   [null,"B066","B065","B064","B063","B062","B061"],
@@ -537,11 +537,12 @@ function toggleAbsent(id){
 function updateAbsentPanel(){
   const total=Object.values(seats).filter(n=>n&&n!=='교사').length;
   document.getElementById('total-count').textContent=total;
-  document.getElementById('absent-count').textContent=absentSet.size;
-  document.getElementById('tab-absent-b').textContent=absentSet.size;
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
+  document.getElementById('absent-count').textContent=filteredAbsent.length;
+  document.getElementById('tab-absent-b').textContent=filteredAbsent.length;
   const list=document.getElementById('absent-list');
-  if(absentSet.size===0){list.innerHTML='<div class="empty-msg"><div class="empty-icon">📋</div>결석 학생이 없습니다.<br>좌석을 클릭하면 표시됩니다.</div>';return;}
-  const sorted=[...absentSet].sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
+  if(filteredAbsent.length===0){list.innerHTML='<div class="empty-msg"><div class="empty-icon">📋</div>결석 학생이 없습니다.<br>좌석을 클릭하면 표시됩니다.</div>';return;}
+  const sorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
   list.innerHTML=sorted.map(id=>{const name=seats[id];const sid=seatToSid[id]||'';
     return `<div class="item absent-item"><span class="sid">${sid||id}</span><span class="nm">${name}</span><span class="x" onclick="toggleAbsent('${id}')" title="취소">✕</span></div>`;}).join('');
 }
@@ -738,9 +739,10 @@ function resetAccum(){
 
 /* ── 복사 ── */
 function copyAbsent(){
-  if(absentSet.size===0){showToast('결석 학생이 없습니다');return;}
-  const sorted=[...absentSet].sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
-  doCopy(`[B실 학습관 결석 명단] ${nowStr()}\n총 ${absentSet.size}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]}`).join('\n'));
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
+  if(filteredAbsent.length===0){showToast('결석 학생이 없습니다');return;}
+  const sorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
+  doCopy(`[B실 학습관 결석 명단] ${nowStr()}\n총 ${filteredAbsent.length}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]}`).join('\n'));
 }
 function copyHits(){
   if(allRecords.length===0){showToast('누적된 명단이 없습니다');return;}
@@ -758,7 +760,8 @@ function copyOver(){
 function copyIntegrated(){
   const specialSeats=Object.keys(timeline).filter(s=>!overnight[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
   const overSeats=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
-  const absentSorted=[...absentSet].sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
+  const absentSorted=filteredAbsent.sort((a,b)=>parseInt(a.replace('B',''))-parseInt(b.replace('B','')));
   if(specialSeats.length===0&&overSeats.length===0&&absentSorted.length===0){showToast('복사할 명단이 없습니다');return;}
   let t=`[B실 출결 명단] ${nowStr()}\n공용실 출타 ${specialSeats.length}명 / 외박 ${overSeats.length}명 / 결석 ${absentSorted.length}명\n`;
   if(specialSeats.length){
