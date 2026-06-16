@@ -517,9 +517,16 @@ function applySeatStates(){
     const el=document.getElementById('seat-'+id);if(!el)continue;
     let cls='seat';
     if(seatToSid[id]) cls+=' matched';
-    if(timeline[id]&&!overnight[id]) cls+=' special';
-    if(overnight[id]) cls+=' overnight';
-    if(absentSet.has(id)) cls+=' absent';
+    
+    // Priority logic: Overnight > Special (Common Room) > Absent
+    if(overnight[id]){
+      cls+=' overnight';
+    } else if(timeline[id]){
+      cls+=' special';
+    } else if(absentSet.has(id)){
+      cls+=' absent';
+    }
+    
     el.className=cls;el.innerHTML=seatInner(id,name);
   }
 }
@@ -667,7 +674,8 @@ function renderMatchPanel(){
   const outCnt=Object.keys(timeline).filter(s=>!overnight[s]).length;
   let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · B실 출타 <b style="color:#5a4bd0">${outCnt}</b>명</div><div class="scroll">`;
   slotList.forEach(slot=>{
-    const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    // Filter out overnight students from common room display list (Priority: Overnight > Common Room)
+    const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">B실 ${bIn.length}</span></div>`;
     html+=`<div class="items-grid">`;
     html+= bIn.length? bIn.map(r=>`<div class="item hit"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`).join('')
@@ -675,7 +683,8 @@ function renderMatchPanel(){
     html+='</div></div>';
   });
   html+='</div>';
-  const tlKeys=Object.keys(timeline).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
+  // Filter out overnight students from student travel flow (Priority: Overnight > Common Room)
+  const tlKeys=Object.keys(timeline).filter(seat=>!overnight[seat]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
   html+=`<details><summary>👣 학생별 이동 흐름 · ${tlKeys.length}명</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`;
   tlKeys.forEach(seat=>{const tl=timeline[seat];const es=[...tl.entries].sort((a,b)=>startMin(a.time)-startMin(b.time));
     html+=`<div class="flow" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0;"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}<span class="seatid">${seat}</span></div>`+
@@ -748,7 +757,9 @@ function copyHits(){
   if(allRecords.length===0){showToast('누적된 명단이 없습니다');return;}
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
   let t=`[B실 공용실 출타 — 시간대별 누적] ${nowStr()}\n시간대 ${slotList.length}개\n`;
-  slotList.forEach(slot=>{const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+  slotList.forEach(slot=>{
+    // Filter out overnight students from common room copy list (Priority: Overnight > Common Room)
+    const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     t+=`\n■ ${slot} (B실 ${bIn.length}명)\n`+(bIn.length?bIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
 }
