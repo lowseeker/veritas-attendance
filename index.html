@@ -47,8 +47,8 @@ textarea:focus{outline:none;border-color:#aaa;background:#fff}
 .parse-info{font-size:12px;color:#888;margin-top:8px;line-height:1.6}
 .reset-row{margin-top:14px;padding-top:12px;border-top:1px dashed #eee}
 
-.main{display:flex;gap:0;padding:20px;max-width:1200px;margin:0 auto;align-items:flex-start}
-.seating-wrap{flex:1;overflow-x:auto;padding-right:20px}
+.main{display:flex;flex-direction:column;gap:16px;padding:20px;max-width:1200px;margin:0 auto;align-items:stretch}
+.seating-wrap{width:100%;overflow-x:auto;padding-right:0}
 .seating-label{font-size:11px;font-weight:600;color:#aaa;margin-bottom:12px;line-height:1.6}
 .seat-grid{display:inline-flex;flex-direction:column;gap:6px;min-width:480px}
 .row{display:flex;gap:6px;align-items:center}
@@ -77,14 +77,17 @@ textarea:focus{outline:none;border-color:#aaa;background:#fff}
 .aisle-inner{width:1px;height:46px;background:#e0ddd6}
 .door-area{text-align:center;margin-top:12px;padding-top:10px;border-top:2px dashed #ddd;font-size:11px;color:#aaa}
 
-.panel{width:322px;flex-shrink:0;background:#fff;border-radius:12px;border:1px solid #e8e6e0;align-self:flex-start;position:sticky;top:80px;overflow:hidden}
+.panel{width:100%;background:#fff;border-radius:12px;border:1px solid #e8e6e0;margin-bottom:8px;overflow:hidden}
 .tabs{display:flex;border-bottom:1px solid #eee}
 .tab{flex:1;text-align:center;font-size:11.5px;font-weight:600;padding:11px 2px;cursor:pointer;color:#999;border-bottom:2px solid transparent}
 .tab.active{color:#1a1a1a;border-bottom-color:#1a1a1a}
 .tab .b{font-size:10px;margin-left:3px;padding:1px 6px;border-radius:10px;background:#eee;color:#777}
 .tab.active .b{background:#1a1a1a;color:#fff}
 .tab-body{padding:14px}
-.scroll{max-height:520px;overflow-y:auto}
+.scroll{max-height:220px;overflow-y:auto}
+.items-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.items-grid .item, #absent-list.scroll .item{margin-bottom:0;flex:1 1 calc(25% - 8px);min-width:200px;max-width:calc(33.33% - 8px)}
+#absent-list.scroll{display:flex;flex-wrap:wrap;gap:8px}
 .summary{font-size:12px;color:#555;background:#f6f4fd;border:1px solid #e7e1f8;border-radius:8px;padding:8px 10px;margin-bottom:12px;line-height:1.6}
 .summary.over{background:#fff6ea;border-color:#f3dfbf}
 .slot{margin-bottom:12px}
@@ -118,14 +121,14 @@ details[open] summary::before{content:'▾ '}
 .place-name{font-size:11px;font-weight:700;color:#5a4bd0;margin:0 0 4px 2px}
 .empty-msg{font-size:12px;color:#aaa;text-align:center;padding:28px 8px;line-height:1.8}
 .empty-icon{font-size:24px;margin-bottom:6px;opacity:.4}
-.btn-copy{width:100%;margin-top:12px;padding:9px;border-radius:8px;background:#1a1a1a;border:none;color:#fff;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-copy{width:fit-content;min-width:240px;margin:12px auto 0;padding:9px;border-radius:8px;background:#1a1a1a;border:none;color:#fff;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
 .btn-copy:hover{background:#333}
 .btn-copy svg{width:14px;height:14px;flex-shrink:0}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;border-radius:8px;padding:10px 20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;white-space:nowrap;max-width:90vw}
 .toast.show{opacity:1}
 .sync-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 10px;border-radius:8px;background:#f5f4f0;border:1px solid #e8e6e0}
 .sync-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:background .3s}
-@media(max-width:760px){.main{flex-direction:column;padding:12px}.seating-wrap{padding-right:0;padding-bottom:16px}.panel{width:100%;position:static}}
+@media(max-width:760px){.main{padding:12px}.seating-wrap{padding-bottom:16px}.items-grid .item, #absent-list.scroll .item{flex:1 1 100%;max-width:100%}}
 </style>
 </head>
 <body>
@@ -186,12 +189,6 @@ details[open] summary::before{content:'▾ '}
 </div>
 
 <div class="main">
-  <div class="seating-wrap">
-    <div class="seating-label">좌석 배치도 — <span style="color:#5a4bd0">보라 = 공용실 출타</span> · <span style="color:#c77400">주황 = 외박</span> · <span style="color:#b03030">빨강 = 결석</span></div>
-    <div class="seat-grid" id="seat-grid"></div>
-    <div class="door-area">▲ 출입구</div>
-  </div>
-
   <div class="panel">
     <div class="tabs">
       <div class="tab active" data-tab="special" onclick="switchTab('special')">공용실<span class="b" id="tab-special-b">0</span></div>
@@ -220,6 +217,12 @@ details[open] summary::before{content:'▾ '}
         공용실 + 외박 + 결석 통합 복사
       </button>
     </div>
+  </div>
+
+  <div class="seating-wrap">
+    <div class="seating-label">좌석 배치도 — <span style="color:#5a4bd0">보라 = 공용실 출타</span> · <span style="color:#c77400">주황 = 외박</span> · <span style="color:#b03030">빨강 = 결석</span></div>
+    <div class="seat-grid" id="seat-grid"></div>
+    <div class="door-area">▲ 출입구</div>
   </div>
 </div>
 
@@ -313,9 +316,10 @@ function fbKey(str){ return (str||'').replace(/[.#$/\[\]]/g,'_'); }
 
 function initFirebase(){
   const dot=document.getElementById('sync-dot'), txt=document.getElementById('sync-text');
+  localInit();
   if(typeof firebase==='undefined'||!firebaseConfig.apiKey||!firebaseConfig.databaseURL){
     dot.style.background='#e08a1e'; txt.textContent='로컬 모드'; txt.style.color='#c77400';
-    localInit(); return;
+    return;
   }
   try{
     firebase.initializeApp(firebaseConfig);
@@ -658,18 +662,19 @@ function renderMatchPanel(){
   slotList.forEach(slot=>{
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">B실 ${bIn.length}</span></div>`;
+    html+=`<div class="items-grid">`;
     html+= bIn.length? bIn.map(r=>`<div class="item hit"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`).join('')
                        : '<div style="font-size:11px;color:#bbb;padding:2px 4px 4px">B실 학생 없음</div>';
-    html+='</div>';
+    html+='</div></div>';
   });
   html+='</div>';
   const tlKeys=Object.keys(timeline).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
-  html+=`<details><summary>👣 학생별 이동 흐름 · ${tlKeys.length}명</summary><div class="scroll" style="margin-top:8px">`;
+  html+=`<details><summary>👣 학생별 이동 흐름 · ${tlKeys.length}명</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`;
   tlKeys.forEach(seat=>{const tl=timeline[seat];const es=[...tl.entries].sort((a,b)=>startMin(a.time)-startMin(b.time));
-    html+=`<div class="flow"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}<span class="seatid">${seat}</span></div>`+
+    html+=`<div class="flow" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0;"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}<span class="seatid">${seat}</span></div>`+
       es.map(e=>`<span class="chip"><span class="ct">${shortTime(e.time)}</span> ${shortPlace(e.place)} <span class="${e.status==='X'?'cx':'ct'}">${e.status}</span></span>`).join('')+'</div>';});
   if(!tlKeys.length) html+='<div style="font-size:11px;color:#bbb;padding:4px">없음</div>';
-  html+='</div></details>';
+  html+='</div></div></details>';
   c.innerHTML=html;
   c.innerHTML+=`<button class="btn-copy" onclick="copyHits()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>시간대별 B실 출타 복사</button>`;
 }
@@ -682,20 +687,22 @@ function renderOverPanel(){
   const w=studyWindow();
   const wlabel=w?`${document.getElementById('study-start').value}~${document.getElementById('study-end').value}`:'';
   let html=`<div class="summary over">자습 ${document.getElementById('study-date').value} ${wlabel} 기준 · B실 외박 <b style="color:#c77400">${bKeys.length}</b>명${others.length?` · 기타 ${others.length}명`:''}${overIgnored.length?` · <span style="color:#aaa">제외 ${overIgnored.length}건</span>`:''}</div>`;
-  html+='<div class="slot-head" style="color:#c77400;border-color:#f0e0c8">🏠 B실 학생 외박 · '+bKeys.length+'명</div><div class="scroll">';
+  html+='<div class="slot-head" style="color:#c77400;border-color:#f0e0c8">🏠 B실 학생 외박 · '+bKeys.length+'명</div>';
+  html+='<div class="scroll">';
+  html+='<div class="items-grid">';
   if(bKeys.length){
     html+=bKeys.map(seat=>{const o=overnight[seat];
       return `<div class="item over-item"><span class="sid" style="color:#c77400">${o.sid||'—'}</span><span class="nm">${o.name}${o.ban?` <span style="color:#c07000;font-size:10px">${o.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${seat}</span></span><span class="rt" title="시작 ${o.start}">복귀 ${dShort(o.end)}</span></div>`;}).join('');
   }else html+='<div style="font-size:11px;color:#bbb;padding:4px">없음</div>';
-  html+='</div>';
+  html+='</div></div>';
   if(others.length){
-    html+=`<details><summary>그 외 외박(타 학생) · ${others.length}명</summary><div class="scroll" style="margin-top:8px">`+
-      others.map(o=>`<div class="item"><span class="sid" style="color:#aaa">${o.sid}</span><span class="nm">${o.name}</span><span class="rt">복귀 ${dShort(o.end)}</span></div>`).join('')+'</div></details>';
+    html+=`<details><summary>그 외 외박(타 학생) · ${others.length}명</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`+
+      others.map(o=>`<div class="item"><span class="sid" style="color:#aaa">${o.sid}</span><span class="nm">${o.name}</span><span class="rt">복귀 ${dShort(o.end)}</span></div>`).join('')+'</div></div></details>';
   }
   if(overIgnored.length){
     const ig=[...overIgnored].sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-    html+=`<details><summary>자습시간이 외박 기간 밖이라 제외 · ${ig.length}건</summary><div class="scroll" style="margin-top:8px">`+
-      ig.map(o=>`<div class="item" style="opacity:.7"><span class="sid" style="color:#bbb">${o.sid}</span><span class="nm" style="color:#999">${o.name}${o.seat?` <span style="font-size:10px;color:#cbb">${o.seat}</span>`:''}</span><span class="rt" style="color:#bbb">${dShort(o.start)}~${dShort(o.end)}</span></div>`).join('')+'</div></details>';
+    html+=`<details><summary>자습시간이 외박 기간 밖이라 제외 · ${ig.length}건</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`+
+      ig.map(o=>`<div class="item" style="opacity:.7"><span class="sid" style="color:#bbb">${o.sid}</span><span class="nm" style="color:#999">${o.name}${o.seat?` <span style="font-size:10px;color:#cbb">${o.seat}</span>`:''}</span><span class="rt" style="color:#bbb">${dShort(o.start)}~${dShort(o.end)}</span></div>`).join('')+'</div></div></details>';
   }
   c.innerHTML=html;
   c.innerHTML+=`<button class="btn-copy" onclick="copyOver()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>B실 외박 명단 복사</button>`;
