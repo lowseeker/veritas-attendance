@@ -135,6 +135,22 @@ details[open] summary::before{content:'▾ '}
   .seating-wrap{padding-bottom:16px}
   .items-grid .item, #absent-list.scroll .item{flex:1 1 100%;max-width:100%}
 }
+.item.over-item .sid{color:#c77400}
+/* D실 남학생 전용 스타일 (블루 계열) */
+.item.hit.d-student{background:#f0f3ff;border-color:#cbd7f6}
+.item.hit.d-student .pl{color:#4a60d6}
+.item.hit.d-student .sid{color:#2f44c7}
+.item.over-item.d-student{background:#eaf7ff;border-color:#bcdffa}
+.item.over-item.d-student .rt{color:#1d70b8}
+.item.over-item.d-student .sid{color:#005ea5}
+.item.absent-item.d-student{background:#f4f8ff;border-color:#cbdcf7}
+.item.absent-item.d-student .nm{color:#1d4ed8}
+.item.absent-item.d-student .sid{color:#3b82f6}
+.flow.d-student{background:#f4f8ff;border-color:#dbeafe}
+.flow.d-student .who{color:#1e40af}
+.flow.d-student .chip{background:#eff6ff;color:#1d4ed8}
+.flow.d-student .chip .ct{color:#3b82f6}
+.flow.d-student .chip .cx{color:#ef4444}
 </style>
 </head>
 <body>
@@ -726,7 +742,9 @@ function updateAbsentPanel(){
   });
   
   list.innerHTML=sorted.map(id=>{const name=seats[id];const sid=seatToSid[id]||'';
-    return `<div class="item absent-item"><span class="sid">${sid||id}</span><span class="nm">${name}</span><span class="x" onclick="toggleAbsent('${id}')" title="취소">✕</span></div>`;}).join('');
+    const isD = id.startsWith('D');
+    const dCls = isD ? ' d-student' : '';
+    return `<div class="item absent-item${dCls}"><span class="sid">${sid||id}</span><span class="nm">${name}</span><span class="x" onclick="toggleAbsent('${id}')" title="취소">✕</span></div>`;}).join('');
 }
 
 function resetAll(){
@@ -943,7 +961,11 @@ function renderMatchPanel(){
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">B/D실 ${bIn.length}</span></div>`;
     html+=`<div class="items-grid">`;
-    html+= bIn.length? bIn.map(r=>`<div class="item hit"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`).join('')
+    html+= bIn.length? bIn.map(r=>{
+      const isD = r.bSeat && r.bSeat.startsWith('D');
+      const dCls = isD ? ' d-student' : '';
+      return `<div class="item hit${dCls}"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
+    }).join('')
                        : '<div style="font-size:11px;color:#bbb;padding:2px 4px 4px">B/D실 학생 없음</div>';
     html+='</div></div>';
   });
@@ -951,7 +973,9 @@ function renderMatchPanel(){
   const tlKeys=Object.keys(timeline).filter(seat=>!overnight[seat]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
   html+=`<details><summary>👣 학생별 이동 흐름 · ${tlKeys.length}명</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`;
   tlKeys.forEach(seat=>{const tl=timeline[seat];const es=[...tl.entries].sort((a,b)=>startMin(a.time)-startMin(b.time));
-    html+=`<div class="flow" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0;"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}<span class="seatid">${seat}</span></div>`+
+    const isD = seat.startsWith('D');
+    const dCls = isD ? ' d-student' : '';
+    html+=`<div class="flow${dCls}" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0;"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}<span class="seatid">${seat}</span></div>`+
       es.map(e=>`<span class="chip"><span class="ct">${shortTime(e.time)}</span> ${shortPlace(e.place)} <span class="${e.status==='X'?'cx':'ct'}">${e.status}</span></span>`).join('')+'</div>';});
   if(!tlKeys.length) html+='<div style="font-size:11px;color:#bbb;padding:4px">없음</div>';
   html+='</div></div></details>';
@@ -972,7 +996,9 @@ function renderOverPanel(){
   html+='<div class="items-grid">';
   if(bKeys.length){
     html+=bKeys.map(seat=>{const o=overnight[seat];
-      return `<div class="item over-item"><span class="sid" style="color:#c77400">${o.sid||'—'}</span><span class="nm">${o.name}${o.ban?` <span style="color:#c07000;font-size:10px">${o.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${seat}</span></span><span class="rt" title="시작 ${o.start}">복귀 ${dShort(o.end)}</span></div>`;}).join('');
+      const isD = seat.startsWith('D');
+      const dCls = isD ? ' d-student' : '';
+      return `<div class="item over-item${dCls}"><span class="sid">${o.sid||'—'}</span><span class="nm">${o.name}${o.ban?` <span style="color:#c07000;font-size:10px">${o.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${seat}</span></span><span class="rt" title="시작 ${o.start}">복귀 ${dShort(o.end)}</span></div>`;}).join('');
   }else html+='<div style="font-size:11px;color:#bbb;padding:4px">없음</div>';
   html+='</div></div>';
   if(others.length){
