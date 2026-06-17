@@ -371,22 +371,12 @@ function scheduleRefresh(){
 }
 
 function registerListeners(){
-  // 공용실 리스너
   commonRef.on('value',snap=>{
-    allRecords.length=0; seenKeys.clear(); slots.clear();
-    for(const k in timeline) delete timeline[k];
-    for(const k in seatToSid) delete seatToSid[k];
+    allRecords.length=0; seenKeys.clear();
     const data=snap.val()||{};
     Object.values(data).forEach(r=>{
       const key=r.sid+'|'+r.time+'|'+r.place;
       seenKeys.add(key); allRecords.push(r);
-      if(r.time) slots.add(r.time);
-      if(r.bSeat){
-        const seat=r.bSeat;
-        const tl=timeline[seat]||(timeline[seat]={seat,name:r.name,sid:r.sid,ban:r.ban,entries:[]});
-        tl.entries.push({time:r.time,place:r.place,status:r.status});
-        seatToSid[seat]=r.sid;
-      }
     });
     scheduleRefresh();
   });
@@ -457,6 +447,55 @@ function registerListeners(){
 }
 
 /* ── 유틸리티 ── */
+function parseTimeRange(timeStr) {
+  const m = (timeStr || '').match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return {
+    start: (+m[1]) * 60 + (+m[2]),
+    end: (+m[3]) * 60 + (+m[4])
+  };
+}
+
+function overlapCommon(timeStr) {
+  const range = parseTimeRange(timeStr);
+  const studyStart = document.getElementById('study-start').value || '19:00';
+  const studyEnd = document.getElementById('study-end').value || '21:30';
+  const sp = studyStart.split(':').map(Number);
+  const ep = studyEnd.split(':').map(Number);
+  const studyStartMin = sp[0] * 60 + sp[1];
+  const studyEndMin = ep[0] * 60 + ep[1];
+  
+  if (range) {
+    return range.start < studyEndMin && studyStartMin < range.end;
+  }
+  
+  const m = (timeStr || '').match(/(\d{1,2}):(\d{2})/);
+  if (m) {
+    const tMin = (+m[1]) * 60 + (+m[2]);
+    return tMin >= studyStartMin && tMin <= studyEndMin;
+  }
+  
+  return true;
+}
+
+function rebuildTimeline() {
+  for(const k in timeline) delete timeline[k];
+  for(const k in seatToSid) delete seatToSid[k];
+  slots.clear();
+  
+  allRecords.forEach(r => {
+    if (!overlapCommon(r.time)) return;
+    
+    if (r.time) slots.add(r.time);
+    if (r.bSeat) {
+      const seat = r.bSeat;
+      const tl = timeline[seat] || (timeline[seat] = {seat, name: r.name, sid: r.sid, ban: r.ban, entries: []});
+      tl.entries.push({time: r.time, place: r.place, status: r.status});
+      seatToSid[seat] = r.sid;
+    }
+  });
+}
+
 function getIntegratedText(){
   const specialSeats=Object.keys(timeline).filter(s=>!overnight[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
   const overSeats=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
@@ -680,8 +719,7 @@ function addCommon(){
   }else{
     processed.forEach(r=>{
       const key=r.sid+'|'+r.time+'|'+r.place;
-      seenKeys.add(key); allRecords.push(r); if(r.time) slots.add(r.time);
-      if(r.bSeat){const seat=r.bSeat;const tl=timeline[seat]||(timeline[seat]={seat,name:r.name,sid:r.sid,ban:r.ban,entries:[]});tl.entries.push({time:r.time,place:r.place,status:r.status});seatToSid[seat]=r.sid;}
+      seenKeys.add(key); allRecords.push(r);
     });
     refreshAll();
   }
@@ -735,7 +773,7 @@ function addOvernight(){
 }
 
 /* ── 렌더 ── */
-function refreshAll(){ renderGrid(); renderMatchPanel(); renderOverPanel(); updateHeaderCounts(); updateAbsentPanel(); }
+function refreshAll(){ rebuildTimeline(); renderGrid(); renderMatchPanel(); renderOverPanel(); updateHeaderCounts(); updateAbsentPanel(); }
 function updateHeaderCounts(){
   document.getElementById('slot-count').textContent=slots.size;
   document.getElementById('special-count').textContent=Object.keys(timeline).filter(s=>!overnight[s]).length;
