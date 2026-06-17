@@ -164,7 +164,7 @@ details[open] summary::before{content:'▾ '}
     <div class="import-body">
       <div class="import-grid">
         <div class="import-col">
-          <label>① 공용실 명단 <span class="hint">시간대(교시)별로 붙여넣고 [공용실 추가] → 누적됩니다</span></label>
+          <label>① 공용실 명단 <span class="hint">onway - 기숙관리 - 공용실 명단 2학년으로 소트 검색 후 긁어서 그대로 붙여 넣기</span></label>
           <textarea id="common-input" placeholder="ONWAY 공용실 명단 그대로 붙여넣기&#10;(순번 / 장소 / 학번·이름·시간·O·X)"></textarea>
           <div class="col-actions">
             <button class="btn btn-primary" onclick="addCommon()">＋ 공용실 추가</button>
@@ -172,7 +172,7 @@ details[open] summary::before{content:'▾ '}
           </div>
         </div>
         <div class="import-col over">
-          <label>② 외박 명단 <span class="hint">시작일·종료일·학번·성명만 추출, 나머지는 무시</span></label>
+          <label>② 외박 명단 <span class="hint">onway - 기숙관리 - 외출외박 명단 2학년으로 소트 검색 후 긁어서 그대로 붙여 넣기</span></label>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:#c77400;font-weight:600;margin-bottom:7px">
             자습 기준
             <input type="date" id="study-date" onchange="onStudyChange()" style="font-size:11px;padding:3px 5px;border:1px solid #e3cfa8;border-radius:6px">
@@ -682,16 +682,100 @@ function resetAll(){
 
 /* ── 공용실 파싱/누적 ── */
 function parseCommon(raw){
-  const lines=raw.split(/\r?\n/);const recs=[];let place=null;const sidRe=/(\d+[_\-\.]\d+[_\-\.]\d+)/;
-  for(let r0 of lines){
-    const t=r0.replace(/\u00a0/g,' ').trim(); if(!t) continue;
-    if(sidRe.test(t)&&/[가-힣]{2,5}/.test(t)){
-      const sidM=t.match(sidRe);const nameM=t.match(/[가-힣]{2,5}/);
-      const timeM=t.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
-      let statM=t.match(/[OXox○×]\s*$/);let status=statM?statM[0].trim().toUpperCase():'';
-      if(status==='○')status='O'; if(status==='×')status='X';
-      recs.push({sid:sidM?sidM[1]:'',name:nameM?nameM[0]:'',time:timeM?timeM[0].replace(/\s+/g,' '):'',status,place:place||'(미상)'});
-    } else if(/^\d+$/.test(t)) { continue; } else { place=t; }
+  const lines = raw.split(/\r?\n/).map(l => l.replace(/\u00a0/g, ' ').trim()).filter(Boolean);
+  const recs = [];
+  let place = null;
+  const sidRe = /(\d+[_\-]\d+[_\-]\d+)/;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (sidRe.test(line)) {
+      const sidM = line.match(sidRe);
+      const sid = sidM[1];
+      
+      // Check if this line also contains a name (old format)
+      const nameM = line.match(/[가-힣]{2,5}/);
+      if (nameM && nameM[0] !== '교사') {
+        const name = nameM[0];
+        const timeM = line.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
+        let time = '';
+        if (timeM) {
+          const parts = timeM[0].split('~');
+          time = parts[0].trim() + ' ~ ' + parts[1].trim();
+        }
+        let statM = line.match(/[OXox○×]\s*$/);
+        let status = statM ? statM[0].trim().toUpperCase() : '';
+        if (status === '○') status = 'O';
+        if (status === '×') status = 'X';
+        
+        recs.push({
+          sid: sid,
+          name: name,
+          time: time,
+          status: status,
+          place: place || '(미상)'
+        });
+      } else {
+        // New multi-line format: Time & Student ID line
+        const timeM = line.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
+        let time = '';
+        if (timeM) {
+          const parts = timeM[0].split('~');
+          time = parts[0].trim() + ' ~ ' + parts[1].trim();
+        }
+        
+        // Name is on the next line (i+1)
+        let name = '';
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          const nameMatch = nextLine.match(/^[가-힣]{2,5}$/);
+          if (nameMatch) {
+            name = nameMatch[0];
+          }
+        }
+        
+        // Location is on the previous line (i-1)
+        let currentPlace = '(미상)';
+        if (i - 1 >= 0) {
+          const prevLine = lines[i - 1];
+          if (/^\d+$/.test(prevLine)) {
+            if (i - 2 >= 0) {
+              currentPlace = lines[i - 2];
+            }
+          } else {
+            currentPlace = prevLine;
+          }
+        }
+        
+        // Status is on i+2
+        let status = '';
+        if (i + 2 < lines.length) {
+          const statusLine = lines[i + 2];
+          let statM = statusLine.match(/[OXox○×]/);
+          if (statM) {
+            status = statM[0].toUpperCase();
+            if (status === '○') status = 'O';
+            if (status === '×') status = 'X';
+          }
+        }
+        
+        if (name) {
+          recs.push({
+            sid: sid,
+            name: name,
+            time: time,
+            status: status,
+            place: currentPlace
+          });
+        }
+      }
+    } else {
+      // If it doesn't contain a student ID, check if it's setting the location (for old format)
+      if (!/^\d+$/.test(line)) {
+        place = line;
+      }
+    }
   }
   return recs;
 }
