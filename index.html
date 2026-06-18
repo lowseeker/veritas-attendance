@@ -151,6 +151,24 @@ details[open] summary::before{content:'▾ '}
 .flow.d-student .chip{background:#eff6ff;color:#1d4ed8}
 .flow.d-student .chip .ct{color:#3b82f6}
 .flow.d-student .chip .cx{color:#ef4444}
+
+.blink-badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #d32f2f;
+  background: #ffebee;
+  border: 1px solid #ffcdd2;
+  padding: 6px 12px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: blink-animation 1.2s infinite alternate;
+}
+@keyframes blink-animation {
+  0% { opacity: 0.4; transform: scale(0.97); }
+  100% { opacity: 1; transform: scale(1.03); }
+}
 </style>
 </head>
 <body>
@@ -240,11 +258,12 @@ details[open] summary::before{content:'▾ '}
       </div>
     </div>
 
-    <div style="padding:0 14px 14px;border-top:1px solid #eee">
-      <button class="btn-copy" onclick="copyIntegrated()" style="background:#5a4bd0">
+    <div style="padding:0 14px 14px;border-top:1px solid #eee; display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px;">
+      <button class="btn-copy" onclick="copyIntegrated()" style="background:#5a4bd0; margin:0;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        공용실 + 외박 + 결석 통합 복사
+        내역 통합 복사 및 저장
       </button>
+      <span class="blink-badge">⚠️ 출석 체크 후 꼭 누르세요!</span>
     </div>
   </div>
 </div>
@@ -360,6 +379,8 @@ const overAll={};
 const overnight={};
 const overOthers={};
 const overIgnored=[];
+let isInitialLoad=true;
+let lastClientDate="";
 
 /* ── Firebase 초기화 ── */
 let firebaseReady=false, commonRef=null, overnightRef=null, absentRef=null, settingsRef=null, historyRef=null, currentDatabaseDate=null;
@@ -398,6 +419,7 @@ function initFirebase(){
 }
 
 function localInit(){
+  lastClientDate=getTodayStr();
   document.getElementById('study-date').value=getTodayStr();
   renderGrid(); updateAbsentPanel(); updateHeaderCounts();
 }
@@ -409,6 +431,7 @@ function scheduleRefresh(){
 }
 
 function registerListeners(){
+  lastClientDate=getTodayStr();
   commonRef.on('value',snap=>{
     allRecords.length=0; seenKeys.clear();
     const data=snap.val()||{};
@@ -441,12 +464,14 @@ function registerListeners(){
       return;
     }
     const newDate = data.studyDate;
-    if(newDate && newDate < todayStr){
+    if(isInitialLoad && newDate && newDate < todayStr){
+      isInitialLoad = false;
       settingsRef.update({ studyDate: todayStr });
       if(commonRef) commonRef.remove();
       if(absentRef) absentRef.remove();
       return;
     }
+    isInitialLoad = false;
     currentDatabaseDate = newDate;
     if(data.studyDate) document.getElementById('study-date').value=data.studyDate;
     if(data.studyStart) document.getElementById('study-start').value=data.studyStart;
@@ -455,9 +480,10 @@ function registerListeners(){
   });
   
   function checkMidnightReset(){
-    if(!firebaseReady || !currentDatabaseDate) return;
+    if(!firebaseReady) return;
     const todayStr = getTodayStr();
-    if(currentDatabaseDate < todayStr){
+    if(lastClientDate < todayStr){
+      lastClientDate = todayStr;
       settingsRef.update({ studyDate: todayStr });
       if(commonRef) commonRef.remove();
       if(absentRef) absentRef.remove();
@@ -612,8 +638,6 @@ function onStudyChange(){
     if(newDate !== currentDatabaseDate){
       updates.studyDate = newDate;
       settingsRef.update(updates);
-      if(commonRef) commonRef.remove();
-      if(absentRef) absentRef.remove();
     } else {
       settingsRef.update(updates);
     }
