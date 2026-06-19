@@ -1080,7 +1080,8 @@ function copyAbsent(){
   const text = `[2학년 B/D실 결석 명단] ${nowStr()}\n총 ${filteredAbsent.length}명\n\n`+sorted.map((id,i)=>`${i+1}. ${seatToSid[id]||id} ${seats[id]} [${id}]`).join('\n');
   doCopy(text);
   const integ = getIntegratedText();
-  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  const studyDate = document.getElementById('study-date').value || getTodayStr();
+  saveHistory(studyDate, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 
 function copyHits(){
@@ -1092,7 +1093,8 @@ function copyHits(){
     t+=`\n■ ${slot} (B/D실 ${bIn.length}명)\n`+(bIn.length?bIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
   const integ = getIntegratedText();
-  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  const studyDate = document.getElementById('study-date').value || getTodayStr();
+  saveHistory(studyDate, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 
 function copyOver(){
@@ -1101,14 +1103,16 @@ function copyOver(){
   const text = `[2학년 B/D실 외박 명단] ${nowStr()}\n총 ${bKeys.length}명\n\n`+bKeys.map((seat,i)=>{const o=overnight[seat];return `${i+1}. ${o.sid} ${o.name}${o.ban?`(${o.ban}반)`:''} [${seat}] — ${dShort(o.start)} ~ ${dShort(o.end)}`;}).join('\n');
   doCopy(text);
   const integ = getIntegratedText();
-  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  const studyDate = document.getElementById('study-date').value || getTodayStr();
+  saveHistory(studyDate, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 
 function copyIntegrated(){
   const integ = getIntegratedText();
   if(integ.specialCnt===0 && integ.overCnt===0 && integ.absentCnt===0){showToast('복사할 명단이 없습니다');return;}
   doCopy(integ.text);
-  saveHistory(integ.date, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
+  const studyDate = document.getElementById('study-date').value || getTodayStr();
+  saveHistory(studyDate, integ.text, `통합본 (공용실 ${integ.specialCnt} / 외박 ${integ.overCnt} / 결석 ${integ.absentCnt})`);
 }
 
 function nowStr(){const n=new Date();return `${n.getFullYear()}.${String(n.getMonth()+1).padStart(2,'0')}.${String(n.getDate()).padStart(2,'0')} ${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;}
@@ -1146,10 +1150,25 @@ function renderHistoryPanel(){
     historyTextMap[h.timestamp] = h.text;
   });
   c.innerHTML = '<div class="scroll" id="history-content-scroll" style="display:flex; flex-wrap:wrap; gap:8px; width:100%;">' + historyList.map(h => {
+    let titleText = '';
+    if (h.studyDate) {
+      const parts = h.studyDate.split('-');
+      const mm = parts[1];
+      const dd = parts[2];
+      const timePart = (h.dateStr || '').split(' ')[1] || '';
+      titleText = `📋 ${mm}/${dd} 자습 (${timePart} 저장)`;
+    } else {
+      const textDateM = h.text ? h.text.match(/\[2학년 B\/D실 출결 명단\]\s+(\d{4})\.(\d{2})\.(\d{2})/) : null;
+      if (textDateM) {
+        titleText = `📋 ${textDateM[2]}/${textDateM[3]} 자습 (${(h.dateStr || '').split(' ')[1] || ''} 저장)`;
+      } else {
+        titleText = `📋 ${h.type && h.type.includes('.') ? h.type : h.dateStr}`;
+      }
+    }
     return `
       <div class="item" style="flex-direction:column; align-items:stretch; gap:6px; padding:10px; border-color:#e8e6e0; flex: 1 1 calc(25% - 8px); min-width:240px; max-width:calc(33.33% - 8px); margin-bottom:0;">
         <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-          <span style="font-weight:700; color:#5a4bd0; font-size:11.5px;">📋 ${h.type && h.type.includes('.') ? h.type : h.dateStr}</span>
+          <span style="font-weight:700; color:#5a4bd0; font-size:11.5px;">${titleText}</span>
           <span class="x" onclick="deleteHistory(${h.timestamp}); event.stopPropagation();" style="margin-left:auto; color:#ccc;" title="삭제">✕</span>
         </div>
         <div style="font-size:11px; color:#666; font-weight:600; text-align:left;">${h.summary || '상세 내역'}</div>
@@ -1279,15 +1298,23 @@ function restoreHistory(timestamp){
     }
   });
   
-  if (dateStr) {
-    const dateM = dateStr.match(/(\d{4})\.(\d{2})\.(\d{2})/);
-    if (dateM) {
-      const targetDate = `${dateM[1]}-${dateM[2]}-${dateM[3]}`;
-      currentDatabaseDate = targetDate;
-      document.getElementById('study-date').value = targetDate;
-      if (firebaseReady) {
-        settingsRef.update({ studyDate: targetDate });
+  let targetDate = '';
+  if (historyItem) {
+    if (historyItem.type && historyItem.type.includes('-')) {
+      targetDate = historyItem.type;
+    } else {
+      const textDateM = historyItem.text ? historyItem.text.match(/\[2학년 B\/D실 출결 명단\]\s+(\d{4})\.(\d{2})\.(\d{2})/) : null;
+      if (textDateM) {
+        targetDate = `${textDateM[1]}-${textDateM[2]}-${textDateM[3]}`;
       }
+    }
+  }
+  
+  if (targetDate) {
+    currentDatabaseDate = targetDate;
+    document.getElementById('study-date').value = targetDate;
+    if (firebaseReady) {
+      settingsRef.update({ studyDate: targetDate });
     }
   }
   
