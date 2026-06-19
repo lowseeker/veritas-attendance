@@ -1211,9 +1211,29 @@ function restoreHistory(timestamp){
   if(!text) { showToast('복원할 데이터를 찾을 수 없습니다'); return; }
   
   const historyItem = historyList.find(h => h.timestamp === timestamp);
-  const dateStr = historyItem ? historyItem.dateStr : '';
   
   if(!confirm('이 기록으로 현재 출결 화면(결석, 공용실, 외박)을 복원할까요?\n기존 출결 상태는 이 기록으로 덮어씌워집니다.')) return;
+  
+  // 1. Resolve and set studyDate FIRST so that studyWindow() uses the correct date during text parsing
+  let targetDate = '';
+  if (historyItem) {
+    if (historyItem.type && historyItem.type.includes('-')) {
+      targetDate = historyItem.type;
+    } else {
+      const textDateM = historyItem.text ? historyItem.text.match(/\[2학년 B\/D실 출결 명단\]\s+(\d{4})\.(\d{2})\.(\d{2})/) : null;
+      if (textDateM) {
+        targetDate = `${textDateM[1]}-${textDateM[2]}-${textDateM[3]}`;
+      }
+    }
+  }
+  
+  if (targetDate) {
+    currentDatabaseDate = targetDate;
+    document.getElementById('study-date').value = targetDate;
+    if (firebaseReady) {
+      settingsRef.update({ studyDate: targetDate });
+    }
+  }
   
   const lines = text.split('\n');
   let section = 'none';
@@ -1263,15 +1283,16 @@ function restoreHistory(timestamp){
         let startTs = null;
         let endTs = null;
         
-        const dateRangeM = rightPart.match(/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})\s*~\s*(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/);
+        // Match M/D HH:MM format (allows single digit for month and day)
+        const dateRangeM = rightPart.match(/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})\s*~\s*(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
         if (dateRangeM) {
           const year = new Date().getFullYear();
           const sDate = new Date(year, +dateRangeM[1]-1, +dateRangeM[2], +dateRangeM[3], +dateRangeM[4]);
           const eDate = new Date(year, +dateRangeM[5]-1, +dateRangeM[6], +dateRangeM[7], +dateRangeM[8]);
           startTs = sDate.getTime();
           endTs = eDate.getTime();
-          startStr = `${String(year).slice(2)}.${dateRangeM[1]}.${dateRangeM[2]} ${dateRangeM[3]}:${dateRangeM[4]}`;
-          endStr = `${String(year).slice(2)}.${dateRangeM[5]}.${dateRangeM[6]} ${dateRangeM[7]}:${dateRangeM[8]}`;
+          startStr = `${String(year).slice(2)}.${String(dateRangeM[1]).padStart(2,'0')}.${String(dateRangeM[2]).padStart(2,'0')} ${String(dateRangeM[3]).padStart(2,'0')}:${dateRangeM[4]}`;
+          endStr = `${String(year).slice(2)}.${String(dateRangeM[5]).padStart(2,'0')}.${String(dateRangeM[6]).padStart(2,'0')} ${String(dateRangeM[7]).padStart(2,'0')}:${dateRangeM[8]}`;
         } else {
           const w = studyWindow();
           if (w) {
@@ -1297,26 +1318,6 @@ function restoreHistory(timestamp){
       }
     }
   });
-  
-  let targetDate = '';
-  if (historyItem) {
-    if (historyItem.type && historyItem.type.includes('-')) {
-      targetDate = historyItem.type;
-    } else {
-      const textDateM = historyItem.text ? historyItem.text.match(/\[2학년 B\/D실 출결 명단\]\s+(\d{4})\.(\d{2})\.(\d{2})/) : null;
-      if (textDateM) {
-        targetDate = `${textDateM[1]}-${textDateM[2]}-${textDateM[3]}`;
-      }
-    }
-  }
-  
-  if (targetDate) {
-    currentDatabaseDate = targetDate;
-    document.getElementById('study-date').value = targetDate;
-    if (firebaseReady) {
-      settingsRef.update({ studyDate: targetDate });
-    }
-  }
   
   if (firebaseReady) {
     absentRef.remove();
