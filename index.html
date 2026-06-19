@@ -1154,8 +1154,9 @@ function renderHistoryPanel(){
         </div>
         <div style="font-size:11px; color:#666; font-weight:600; text-align:left;">${h.summary || '상세 내역'}</div>
         <div style="display:flex; gap:6px; margin-top:4px; width:100%;">
-          <button class="btn btn-ghost" onclick="copyHistoryText(${h.timestamp})" style="font-size:11px; padding:5px 8px; flex:1; height:auto; min-width:0; background:#fbfbf9; border:1px solid #ddd;">다시 복사</button>
-          <button class="btn btn-ghost" onclick="toggleHistoryText(${h.timestamp})" style="font-size:11px; padding:5px 8px; flex:1; height:auto; min-width:0; background:#fbfbf9; border:1px solid #ddd;">내용 보기</button>
+          <button class="btn btn-ghost" onclick="copyHistoryText(${h.timestamp})" style="font-size:10.5px; padding:5px 4px; flex:1; height:auto; min-width:0; background:#fbfbf9; border:1px solid #ddd; text-align:center;">다시 복사</button>
+          <button class="btn btn-ghost" onclick="toggleHistoryText(${h.timestamp})" style="font-size:10.5px; padding:5px 4px; flex:1; height:auto; min-width:0; background:#fbfbf9; border:1px solid #ddd; text-align:center;">내용 보기</button>
+          <button class="btn btn-primary" onclick="restoreHistory(${h.timestamp})" style="font-size:10.5px; padding:5px 4px; flex:1; height:auto; min-width:0; background:#5a4bd0; color:#fff; border:none; text-align:center;">복원</button>
         </div>
         <pre id="history-text-${h.timestamp}" style="display:none; margin-top:6px; padding:8px; background:#f5f4f0; border-radius:6px; font-size:10px; white-space:pre-wrap; word-break:break-all; font-family:monospace; color:#333; max-height:120px; overflow-y:auto; border:1px solid #e0ddd6; text-align:left; width:100%;"></pre>
       </div>
@@ -1184,6 +1185,156 @@ function deleteHistory(timestamp){
   if(firebaseReady){
     firebase.database().ref('attendance/history/' + timestamp).remove();
   }
+}
+
+function restoreHistory(timestamp){
+  const text = historyTextMap[timestamp];
+  if(!text) { showToast('복원할 데이터를 찾을 수 없습니다'); return; }
+  
+  const historyItem = historyList.find(h => h.timestamp === timestamp);
+  const dateStr = historyItem ? historyItem.dateStr : '';
+  
+  if(!confirm('이 기록으로 현재 출결 화면(결석, 공용실, 외박)을 복원할까요?\n기존 출결 상태는 이 기록으로 덮어씌워집니다.')) return;
+  
+  const lines = text.split('\n');
+  let section = 'none';
+  const parsedCommon = [];
+  const parsedOvernight = [];
+  const parsedAbsent = [];
+  
+  lines.forEach(line => {
+    line = line.trim();
+    if (!line) return;
+    if (line.includes('■ 공용실')) { section = 'common'; return; }
+    if (line.includes('■ 외박')) { section = 'overnight'; return; }
+    if (line.includes('■ 결석')) { section = 'absent'; return; }
+    if (line.includes('■') || line.startsWith('[')) { section = 'none'; return; }
+    
+    if (section !== 'none' && /^\d+\./.test(line)) {
+      const seatM = line.match(/\[([BD]\d{3})\]/);
+      const sidM = line.match(/(\d+[_\-.]\d+[_\-.]\d+)/);
+      const nameMatch = line.match(/(?:^|\s)([가-힣]{2,5})(?:[\(\s]|$)/);
+      const name = nameMatch ? nameMatch[1] : '';
+      
+      const seat = seatM ? seatM[1] : '';
+      const sid = sidM ? sidM[1] : '';
+      
+      if (section === 'absent') {
+        if (seat) parsedAbsent.push(seat);
+      } else if (section === 'common') {
+        const parts = line.split('—');
+        const place = parts[1] ? parts[1].trim() : '공용실';
+        const studyStart = document.getElementById('study-start').value || '19:00';
+        const studyEnd = document.getElementById('study-end').value || '21:30';
+        const time = `${studyStart} ~ ${studyEnd}`;
+        parsedCommon.push({
+          sid,
+          name,
+          place,
+          time,
+          status: 'O',
+          bSeat: seat,
+          ban: seat && seatMeta[seat] ? seatMeta[seat].ban : null
+        });
+      } else if (section === 'overnight') {
+        const parts = line.split('—');
+        const rightPart = parts[1] ? parts[1].trim() : '외박';
+        let startStr = '';
+        let endStr = '';
+        let startTs = null;
+        let endTs = null;
+        
+        const dateRangeM = rightPart.match(/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})\s*~\s*(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/);
+        if (dateRangeM) {
+          const year = new Date().getFullYear();
+          const sDate = new Date(year, +dateRangeM[1]-1, +dateRangeM[2], +dateRangeM[3], +dateRangeM[4]);
+          const eDate = new Date(year, +dateRangeM[5]-1, +dateRangeM[6], +dateRangeM[7], +dateRangeM[8]);
+          startTs = sDate.getTime();
+          endTs = eDate.getTime();
+          startStr = `${String(year).slice(2)}.${dateRangeM[1]}.${dateRangeM[2]} ${dateRangeM[3]}:${dateRangeM[4]}`;
+          endStr = `${String(year).slice(2)}.${dateRangeM[5]}.${dateRangeM[6]} ${dateRangeM[7]}:${dateRangeM[8]}`;
+        } else {
+          const w = studyWindow();
+          if (w) {
+            startTs = w.start;
+            endTs = w.end;
+            const sd = new Date(startTs);
+            const ed = new Date(endTs);
+            startStr = `${String(sd.getFullYear()).slice(2)}.${String(sd.getMonth()+1).padStart(2,'0')}.${String(sd.getDate()).padStart(2,'0')} ${String(sd.getHours()).padStart(2,'0')}:${String(sd.getMinutes()).padStart(2,'0')}`;
+            endStr = `${String(ed.getFullYear()).slice(2)}.${String(ed.getMonth()+1).padStart(2,'0')}.${String(ed.getDate()).padStart(2,'0')} ${String(ed.getHours()).padStart(2,'0')}:${String(ed.getMinutes()).padStart(2,'0')}`;
+          }
+        }
+        
+        parsedOvernight.push({
+          sid,
+          name,
+          start: startStr,
+          end: endStr,
+          startTs,
+          endTs,
+          seat,
+          ban: seat && seatMeta[seat] ? seatMeta[seat].ban : null
+        });
+      }
+    }
+  });
+  
+  if (dateStr) {
+    const dateM = dateStr.match(/(\d{4})\.(\d{2})\.(\d{2})/);
+    if (dateM) {
+      const targetDate = `${dateM[1]}-${dateM[2]}-${dateM[3]}`;
+      currentDatabaseDate = targetDate;
+      document.getElementById('study-date').value = targetDate;
+      if (firebaseReady) {
+        settingsRef.update({ studyDate: targetDate });
+      }
+    }
+  }
+  
+  if (firebaseReady) {
+    absentRef.remove();
+    commonRef.remove();
+    overnightRef.remove();
+    
+    const absentUpdates = {};
+    parsedAbsent.forEach(id => { absentUpdates[id] = true; });
+    if (Object.keys(absentUpdates).length) absentRef.update(absentUpdates);
+    
+    const commonUpdates = {};
+    parsedCommon.forEach(r => {
+      const key = r.sid + '|' + r.time + '|' + r.place;
+      commonUpdates[fbKey(key)] = r;
+    });
+    if (Object.keys(commonUpdates).length) commonRef.update(commonUpdates);
+    
+    const overnightUpdates = {};
+    parsedOvernight.forEach(r => {
+      const overKey = r.sid + '|' + r.start;
+      overnightUpdates[fbKey(overKey)] = r;
+    });
+    if (Object.keys(overnightUpdates).length) overnightRef.update(overnightUpdates);
+  } else {
+    absentSet.clear();
+    parsedAbsent.forEach(id => absentSet.add(id));
+    
+    allRecords.length = 0;
+    seenKeys.clear();
+    parsedCommon.forEach(r => {
+      const key = r.sid + '|' + r.time + '|' + r.place;
+      seenKeys.add(key);
+      allRecords.push(r);
+    });
+    
+    for (const k in overAll) delete overAll[k];
+    parsedOvernight.forEach(r => {
+      const overKey = r.sid + '|' + r.start;
+      overAll[overKey] = r;
+    });
+    
+    classifyOver();
+    refreshAll();
+  }
+  showToast('출결 내역이 성공적으로 복원되었습니다');
 }
 
 /* ── 시작 ── */
