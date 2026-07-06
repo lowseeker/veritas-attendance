@@ -368,8 +368,16 @@ const seatMeta = {
   "D098": {grade:2, ban:5}   // 김민성 (5반)
 };
 
+const nameAlias = {
+  'BATKHISHIG EGSHIGLEN': '에네',
+  'EGSHIGLEN': '에네',
+  'BATKHISHIG': '에네'
+};
+
 const bNameToSeats={};
 for(const id in seats){const n=seats[id];if(n&&n!=='교사'){(bNameToSeats[n]=bNameToSeats[n]||[]).push(id);}}
+// Register aliases into bNameToSeats
+for(const alias in nameAlias){ const real=nameAlias[alias]; if(bNameToSeats[real]){ bNameToSeats[alias]=bNameToSeats[real]; } }
 
 /* ── 상태 변수 ── */
 const absentSet=new Set();
@@ -645,7 +653,8 @@ function onStudyChange(){
 }
 
 function resolveSeat(name,info){
-  const cands=bNameToSeats[name]; if(!cands) return null;
+  const resolvedName = nameAlias[name] || name;
+  const cands=bNameToSeats[resolvedName]; if(!cands) return null;
   if(cands.length===1) return cands[0];
   return cands.find(s=>seatMeta[s]&&info.ban!=null&&seatMeta[s].ban===info.ban)||cands[0];
 }
@@ -793,8 +802,10 @@ function parseCommon(raw){
       const sid = sidM[1];
       
       const nameM = line.match(/[가-힣]{2,5}/);
-      if (nameM && nameM[0] !== '교사') {
-        const name = nameM[0];
+      const latinNameM = !nameM ? line.match(/[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})*/) : null;
+      const foundName = nameM ? nameM[0] : (latinNameM ? latinNameM[0] : null);
+      if (foundName && foundName !== '교사') {
+        const name = nameAlias[foundName] || foundName;
         const timeM = line.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
         let time = '';
         if (timeM) {
@@ -825,8 +836,11 @@ function parseCommon(raw){
         if (i + 1 < lines.length) {
           const nextLine = lines[i + 1];
           const nameMatch = nextLine.match(/^[가-힣]{2,5}$/);
+          const latinMatch = !nameMatch ? nextLine.match(/^[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})*$/) : null;
           if (nameMatch) {
             name = nameMatch[0];
+          } else if (latinMatch) {
+            name = nameAlias[latinMatch[0]] || latinMatch[0];
           }
         }
         
@@ -917,6 +931,7 @@ function parseOvernight(raw){
       if(headRe.test(lines[j])) break;
       const nm=lines[j].replace(/\u00a0/g,' ').trim();
       if(/^[가-힣]{2,5}$/.test(nm)){ name=nm; break; }
+      if(/^[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})*$/.test(nm)){ name=nameAlias[nm]||nm; break; }
     }
     recs.push({start:m[2],end:m[3],sid:m[4],name});
   }
