@@ -563,6 +563,14 @@ function rebuildTimeline() {
 
 function getIntegratedText(){
   const specialSeats=Object.keys(timeline).filter(s=>!overnight[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
+  // Collect seatless common room students
+  const noSeatCommon={};
+  allRecords.filter(r=>!r.bSeat && overlapCommon(r.time)).forEach(r=>{
+    const k=r.sid+'|'+r.name;
+    if(!noSeatCommon[k]) noSeatCommon[k]={sid:r.sid, name:r.name, ban:r.ban, places:[]};
+    noSeatCommon[k].places.push(shortPlace(r.place));
+  });
+  const noSeatList=Object.values(noSeatCommon).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
   const overSeats=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
   const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
   
@@ -574,14 +582,20 @@ function getIntegratedText(){
     return parseInt(a.slice(1)) - parseInt(b.slice(1));
   });
   
+  const totalSpecial = specialSeats.length + noSeatList.length;
   const dStr = nowStr();
-  let t=`[2학년 B/D실 출결 명단] ${dStr}\n공용실 ${specialSeats.length}명 / 외박 ${overSeats.length}명 / 결석 ${absentSorted.length}명\n`;
-  if(specialSeats.length){
-    t+=`\n■ 공용실 (${specialSeats.length}명)\n`;
-    specialSeats.forEach((seat,i)=>{
+  let t=`[2학년 B/D실 출결 명단] ${dStr}\n공용실 ${totalSpecial}명 / 외박 ${overSeats.length}명 / 결석 ${absentSorted.length}명\n`;
+  if(totalSpecial){
+    t+=`\n■ 공용실 (${totalSpecial}명)\n`;
+    let idx=1;
+    specialSeats.forEach(seat=>{
       const tl=timeline[seat];
       const places=[...new Set(tl.entries.map(e=>shortPlace(e.place)))].join(', ');
-      t+=`${i+1}. ${tl.sid||seat} ${tl.name}${tl.ban?`(${tl.ban}반)`:''} [${seat}] — ${places}\n`;
+      t+=`${idx++}. ${tl.sid||seat} ${tl.name}${tl.ban?`(${tl.ban}반)`:''} [${seat}] — ${places}\n`;
+    });
+    noSeatList.forEach(s=>{
+      const places=[...new Set(s.places)].join(', ');
+      t+=`${idx++}. ${s.sid} ${s.name}${s.ban?`(${s.ban}반)`:''} [기타] — ${places}\n`;
     });
   }
   if(overSeats.length){
@@ -995,17 +1009,29 @@ function renderMatchPanel(){
   if(allRecords.length===0){ c.innerHTML='<div class="empty-msg"><div class="empty-icon">🔍</div>공용실 명단을 붙여넣고<br><b>공용실 추가</b>를 누르면<br>시간대별로 누적됩니다.</div>'; return; }
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
   const outCnt=Object.keys(timeline).filter(s=>!overnight[s]).length;
-  let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · B/D실 공용실 <b style="color:#5a4bd0">${outCnt}</b>명</div><div class="scroll">`;
+  const noSeatRecords=allRecords.filter(r=>!r.bSeat && overlapCommon(r.time));
+  const noSeatUnique={};
+  noSeatRecords.forEach(r=>{ const k=r.sid+'|'+r.name; if(!noSeatUnique[k]) noSeatUnique[k]=r; });
+  const noSeatCnt=Object.keys(noSeatUnique).length;
+  let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · B/D실 공용실 <b style="color:#5a4bd0">${outCnt}</b>명${noSeatCnt ? ` · 기타 <b style="color:#888">${noSeatCnt}</b>명` : ''}</div><div class="scroll">`;
   slotList.forEach(slot=>{
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-    html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">B/D실 ${bIn.length}</span></div>`;
+    const noSeatIn=allRecords.filter(r=>!r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const totalIn=bIn.length+noSeatIn.length;
+    html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">${totalIn}명</span></div>`;
     html+=`<div class="items-grid">`;
-    html+= bIn.length? bIn.map(r=>{
-      const isD = r.bSeat && r.bSeat.startsWith('D');
-      const dCls = isD ? ' d-student' : '';
-      return `<div class="item hit${dCls}"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
-    }).join('')
-                       : '<div style="font-size:11px;color:#bbb;padding:2px 4px 4px">B/D실 학생 없음</div>';
+    if(totalIn){
+      html+= bIn.map(r=>{
+        const isD = r.bSeat && r.bSeat.startsWith('D');
+        const dCls = isD ? ' d-student' : '';
+        return `<div class="item hit${dCls}"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
+      }).join('');
+      html+= noSeatIn.map(r=>{
+        return `<div class="item hit" style="border-color:#d0ccc0;background:#f9f8f4"><span class="sid" style="color:#999">${r.sid||'—'}</span><span class="nm" style="color:#666">${r.name} <span style="color:#bbb;font-weight:400;font-size:10px">기타</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
+      }).join('');
+    } else {
+      html+='<div style="font-size:11px;color:#bbb;padding:2px 4px 4px">학생 없음</div>';
+    }
     html+='</div></div>';
   });
   html+='</div>';
@@ -1105,7 +1131,9 @@ function copyHits(){
   let t=`[2학년 B/D실 공용실 — 시간대별 누적] ${nowStr()}\n시간대 ${slotList.length}개\n`;
   slotList.forEach(slot=>{
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-    t+=`\n■ ${slot} (B/D실 ${bIn.length}명)\n`+(bIn.length?bIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
+    const noSeatIn=allRecords.filter(r=>!r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const allIn=[...bIn,...noSeatIn];
+    t+=`\n■ ${slot} (${allIn.length}명)\n`+(allIn.length?allIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat||'기타'}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
   const integ = getIntegratedText();
   const studyDate = document.getElementById('study-date').value || getTodayStr();
