@@ -378,10 +378,25 @@ const nameAlias = {
   'BATKHISHIG': '에네'
 };
 
+// 휴사 학생 설정 (복귀 시 이 객체에서 좌석 항목을 삭제하거나 주석 처리하면 바로 원상 복구됩니다)
+const leaveSeats = {
+  "B012": { name: "홍수빈", status: "휴사" }
+};
+
 const bNameToSeats={};
-for(const id in seats){const n=seats[id];if(n&&n!=='교사'){(bNameToSeats[n]=bNameToSeats[n]||[]).push(id);}}
+for(const id in seats){
+  const n=seats[id];
+  if(n && n!=='교사' && !leaveSeats[id]){
+    (bNameToSeats[n]=bNameToSeats[n]||[]).push(id);
+  }
+}
 // Register aliases into bNameToSeats
-for(const alias in nameAlias){ const real=nameAlias[alias]; if(bNameToSeats[real]){ bNameToSeats[alias]=bNameToSeats[real]; } }
+for(const alias in nameAlias){
+  const real=nameAlias[alias];
+  if(bNameToSeats[real]){
+    bNameToSeats[alias]=bNameToSeats[real];
+  }
+}
 
 /* ── 상태 변수 ── */
 const absentSet=new Set();
@@ -448,7 +463,7 @@ function registerListeners(){
     allRecords.length=0; seenKeys.clear();
     const data=snap.val()||{};
     Object.values(data).forEach(r=>{
-      const key=r.sid+'|'+r.time+'|'+r.place;
+      const key=r.sid+'|'+(r.date||'')+'|'+r.time+'|'+r.place;
       seenKeys.add(key); allRecords.push(r);
     });
     scheduleRefresh();
@@ -519,6 +534,21 @@ function registerListeners(){
 }
 
 /* ── 유틸리티 ── */
+function extractDate(str) {
+  if (!str) return null;
+  let m = str.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+  if (m) {
+    const y = m[1], mo = m[2].padStart(2, '0'), d = m[3].padStart(2, '0');
+    return `${y}-${mo}-${d}`;
+  }
+  m = str.match(/(?:^|[^\d])(\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+  if (m) {
+    const y = '20' + m[1], mo = m[2].padStart(2, '0'), d = m[3].padStart(2, '0');
+    return `${y}-${mo}-${d}`;
+  }
+  return null;
+}
+
 function parseTimeRange(timeStr) {
   const m = (timeStr || '').match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
   if (!m) return null;
@@ -528,7 +558,11 @@ function parseTimeRange(timeStr) {
   };
 }
 
-function overlapCommon(timeStr) {
+function overlapCommon(timeStr, dateStr) {
+  const curDate = document.getElementById('study-date').value || getTodayStr();
+  if (dateStr && dateStr !== curDate) {
+    return false;
+  }
   const range = parseTimeRange(timeStr);
   const studyStart = document.getElementById('study-start').value || '19:00';
   const studyEnd = document.getElementById('study-end').value || '21:30';
@@ -554,7 +588,13 @@ function rebuildTimeline() {
   slots.clear();
   
   allRecords.forEach(r => {
-    if (!overlapCommon(r.time)) return;
+    const info = parseSid(r.sid);
+    r.bSeat = (info.grade === 2 || info.grade == null) ? resolveSeat(r.name, info) : null;
+    if (r.bSeat && leaveSeats[r.bSeat]) r.bSeat = null;
+    if (!r.ban && info.ban) r.ban = info.ban;
+    if (r.bSeat && seatMeta[r.bSeat]) r.ban = seatMeta[r.bSeat].ban;
+
+    if (!overlapCommon(r.time, r.date)) return;
     if (r.time) slots.add(r.time);
     if (r.bSeat) {
       const seat = r.bSeat;
@@ -566,17 +606,17 @@ function rebuildTimeline() {
 }
 
 function getIntegratedText(){
-  const specialSeats=Object.keys(timeline).filter(s=>!overnight[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
+  const specialSeats=Object.keys(timeline).filter(s=>!overnight[s] && !leaveSeats[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
   // Collect seatless common room students
   const noSeatCommon={};
-  allRecords.filter(r=>!r.bSeat && overlapCommon(r.time)).forEach(r=>{
-    const k=r.sid+'|'+r.name;
+  allRecords.filter(r=>!r.bSeat && overlapCommon(r.time, r.date)).forEach(r=>{
+    const k=(r.sid||'')+'|'+r.name;
     if(!noSeatCommon[k]) noSeatCommon[k]={sid:r.sid, name:r.name, ban:r.ban, places:[]};
     noSeatCommon[k].places.push(shortPlace(r.place));
   });
   const noSeatList=Object.values(noSeatCommon).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-  const overSeats=Object.keys(overnight).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
-  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
+  const overSeats=Object.keys(overnight).filter(s=>!leaveSeats[s]).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id] && !leaveSeats[id]);
   
   // Sort B실 first, then D실
   const absentSorted = filteredAbsent.sort((a, b) => {
@@ -649,7 +689,8 @@ function classifyOver(){
   overIgnored.length=0;
   Object.values(overAll).forEach(r=>{
     if(!overlapStudy(r.startTs,r.endTs)){ overIgnored.push(r); return; }
-    if(r.seat) overnight[r.seat]={sid:r.sid,name:r.name,start:r.start,end:r.end,ban:r.ban};
+    const seat = (r.seat && !leaveSeats[r.seat]) ? r.seat : null;
+    if(seat) overnight[seat]={sid:r.sid,name:r.name,start:r.start,end:r.end,ban:r.ban};
     else overOthers[r.sid]={sid:r.sid,name:r.name,start:r.start,end:r.end};
   });
 }
@@ -697,6 +738,14 @@ function latestEntry(seat){
 function makeSeat(id){
   const el=document.createElement('div');
   if(!id){el.className='seat empty';return el;}
+  if(leaveSeats[id]){
+    const lv = leaveSeats[id];
+    el.className='seat no-student leave-seat';
+    el.style.cssText='background:#f6f5f1;border-color:#dcd8d0;cursor:default;';
+    el.innerHTML=`<span class="seat-num" style="color:#999">${id}</span><span class="seat-name" style="color:#777;font-size:11px;font-weight:700">휴사</span><span class="seat-sid" style="color:#aaa;font-size:9px">${lv.name}</span>`;
+    el.title = `${id} ${lv.name} (휴사 - 복귀 시 해제 가능)`;
+    return el;
+  }
   const name=seats[id];
   if(!name){el.className='seat no-student';el.innerHTML=`<span class="seat-num">${id}</span><span class="seat-name">미배정</span>`;return el;}
   if(name==='교사'){el.className='seat no-student';el.style.cssText='background:#f0f4ff;border-color:#b0c0e0;';el.innerHTML=`<span class="seat-num" style="color:#6080c0">${id}</span><span class="seat-name" style="color:#4060a0;font-size:11px">교사석</span>`;return el;}
@@ -754,6 +803,7 @@ function renderGrid(){
 
 function applySeatStates(){
   for(const id in seats){
+    if(leaveSeats[id]) continue;
     const name=seats[id];if(!name||name==='교사')continue;
     const el=document.getElementById('seat-'+id);if(!el)continue;
     let cls='seat';
@@ -772,6 +822,7 @@ function applySeatStates(){
 
 /* ── 결석 ── */
 function toggleAbsent(id){
+  if(leaveSeats[id]) return;
   if(firebaseReady){
     if(absentSet.has(id)) absentRef.child(id).remove();
     else absentRef.child(id).set(true);
@@ -782,12 +833,12 @@ function toggleAbsent(id){
 }
 
 function updateAbsentPanel(){
-  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사').length;
-  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사').length;
+  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
+  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
   document.getElementById('b-total-count').textContent = totalB;
   document.getElementById('d-total-count').textContent = totalD;
   
-  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id]);
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id] && !leaveSeats[id]);
   document.getElementById('absent-count').textContent=filteredAbsent.length;
   document.getElementById('tab-absent-b').textContent=filteredAbsent.length;
   
@@ -820,27 +871,36 @@ function parseCommon(raw){
   const lines = raw.split(/\r?\n/).map(l => l.replace(/\u00a0/g, ' ').trim()).filter(Boolean);
   const recs = [];
   let place = null;
-  const sidRe = /(\d+[_\-]\d+[_\-]\d+)/;
+  let currentLineDate = null;
+  const defaultDate = document.getElementById('study-date').value || getTodayStr();
+  const sidRe = /(\d+[_\-]\d+[_\-]\d+|\b\d{4,5}\b)/;
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const lineDate = extractDate(line);
+    if (lineDate) currentLineDate = lineDate;
     
-    if (sidRe.test(line)) {
-      const sidM = line.match(sidRe);
+    let cleanedLine = line;
+    if (lineDate) {
+      cleanedLine = line.replace(/(\d{2,4})[.\-/](\d{1,2})[.\-/](\d{1,2})/, '');
+    }
+    
+    if (sidRe.test(cleanedLine)) {
+      const sidM = cleanedLine.match(sidRe);
       const sid = sidM[1];
       
-      const nameM = line.match(/[가-힣]{2,5}/);
-      const latinNameM = !nameM ? line.match(/[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})*/) : null;
+      const nameM = cleanedLine.match(/[가-힣]{2,5}/);
+      const latinNameM = !nameM ? cleanedLine.match(/[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})*/) : null;
       const foundName = nameM ? nameM[0] : (latinNameM ? latinNameM[0] : null);
       if (foundName && foundName !== '교사') {
         const name = nameAlias[foundName] || foundName;
-        const timeM = line.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
+        const timeM = cleanedLine.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
         let time = '';
         if (timeM) {
           const parts = timeM[0].split('~');
           time = parts[0].trim() + ' ~ ' + parts[1].trim();
         }
-        let statM = line.match(/[OXox○×]\s*$/);
+        let statM = cleanedLine.match(/[OXox○×]\s*$/);
         let status = statM ? statM[0].trim().toUpperCase() : '';
         if (status === '○') status = 'O';
         if (status === '×') status = 'X';
@@ -849,11 +909,12 @@ function parseCommon(raw){
           sid: sid,
           name: name,
           time: time,
+          date: lineDate || currentLineDate || defaultDate,
           status: status,
           place: place || '(미상)'
         });
       } else {
-        const timeM = line.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
+        const timeM = cleanedLine.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
         let time = '';
         if (timeM) {
           const parts = timeM[0].split('~');
@@ -863,8 +924,8 @@ function parseCommon(raw){
         let name = '';
         if (i + 1 < lines.length) {
           const nextLine = lines[i + 1];
-          const nameMatch = nextLine.match(/^[가-힣]{2,5}$/);
-          const latinMatch = !nameMatch ? nextLine.match(/^[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})*$/) : null;
+          const nameMatch = nextLine.match(/[가-힣]{2,5}/);
+          const latinMatch = !nameMatch ? nextLine.match(/[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})*/) : null;
           if (nameMatch) {
             name = nameMatch[0];
           } else if (latinMatch) {
@@ -900,13 +961,14 @@ function parseCommon(raw){
             sid: sid,
             name: name,
             time: time,
+            date: lineDate || currentLineDate || defaultDate,
             status: status,
             place: currentPlace
           });
         }
       }
     } else {
-      if (!/^\d+$/.test(line)) {
+      if (!/^\d+$/.test(line) && !extractDate(line)) {
         place = line;
       }
     }
@@ -920,24 +982,24 @@ function addCommon(){
   let added=0,dup=0;
   const processed=[];
   recs.forEach(r=>{
-    const key=r.sid+'|'+r.time+'|'+r.place;
+    const key=r.sid+'|'+(r.date||'')+'|'+r.time+'|'+r.place;
     if(seenKeys.has(key)){dup++;return;}
     const info=parseSid(r.sid);
     const seat=(info.grade===2||info.grade==null)?resolveSeat(r.name,info):null;
-    r.bSeat=seat||null; r.grade=info.grade; r.ban=seat&&seatMeta[seat]?seatMeta[seat].ban:info.ban;
+    r.bSeat=(seat && !leaveSeats[seat])?seat:null; r.grade=info.grade; r.ban=seat&&seatMeta[seat]?seatMeta[seat].ban:info.ban;
     processed.push(r); added++;
   });
   if(added===0){ showToast(dup?`중복 ${dup}건, 새 항목 없음`:'인식된 항목 없음'); return; }
   if(firebaseReady){
     const updates={};
     processed.forEach(r=>{
-      const key=r.sid+'|'+r.time+'|'+r.place;
+      const key=r.sid+'|'+(r.date||'')+'|'+r.time+'|'+r.place;
       updates[fbKey(key)]=r;
     });
     commonRef.update(updates);
   }else{
     processed.forEach(r=>{
-      const key=r.sid+'|'+r.time+'|'+r.place;
+      const key=r.sid+'|'+(r.date||'')+'|'+r.time+'|'+r.place;
       seenKeys.add(key); allRecords.push(r);
     });
     refreshAll();
@@ -997,23 +1059,31 @@ function addOvernight(){
 function refreshAll(){ rebuildTimeline(); renderGrid(); renderMatchPanel(); renderOverPanel(); updateHeaderCounts(); updateAbsentPanel(); }
 
 function updateHeaderCounts(){
-  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사').length;
-  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사').length;
+  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
+  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
   document.getElementById('b-total-count').textContent = totalB;
   document.getElementById('d-total-count').textContent = totalD;
   
   document.getElementById('slot-count').textContent=slots.size;
-  const specialCnt = Object.keys(timeline).filter(s=>!overnight[s]).length;
-  document.getElementById('special-count').textContent=specialCnt;
-  const overCnt = Object.keys(overnight).length;
+  const specialBDSit = Object.keys(timeline).filter(s=>!overnight[s] && !leaveSeats[s]).length;
+  
+  // Count unique non-seat students in active study window
+  const noSeatRecords=allRecords.filter(r=>!r.bSeat && overlapCommon(r.time, r.date));
+  const noSeatUnique={};
+  noSeatRecords.forEach(r=>{ const k=(r.sid||'')+'|'+r.name; if(!noSeatUnique[k]) noSeatUnique[k]=r; });
+  const noSeatCnt=Object.keys(noSeatUnique).length;
+  const specialTotal = specialBDSit + noSeatCnt;
+
+  document.getElementById('special-count').textContent=specialTotal;
+  const overCnt = Object.keys(overnight).filter(s=>!leaveSeats[s]).length;
   document.getElementById('over-count').textContent=overCnt;
   
-  document.getElementById('tab-special-b').textContent=specialCnt;
+  document.getElementById('tab-special-b').textContent=specialTotal;
   document.getElementById('tab-over-b').textContent=overCnt;
   
   document.getElementById('parse-info').innerHTML=
-    `공용실: 누적 ${allRecords.length}건 · <b style="color:#1f7a4d">시간대 ${slots.size}</b> · <b style="color:#5a4bd0">공용실 ${specialCnt}명</b> &nbsp;|&nbsp; 외박: <b style="color:#c77400">B/D실 ${overCnt}명</b>`;
-  document.getElementById('head-info').textContent=`(시간대 ${slots.size} · 공용실 ${specialCnt} · 외박 ${overCnt})`;
+    `공용실: 누적 ${allRecords.length}건 · <b style="color:#1f7a4d">시간대 ${slots.size}</b> · <b style="color:#5a4bd0">공용실 ${specialTotal}명${noSeatCnt?`(B/D실 ${specialBDSit}+기타 ${noSeatCnt})`:''}</b> &nbsp;|&nbsp; 외박: <b style="color:#c77400">B/D실 ${overCnt}명</b>`;
+  document.getElementById('head-info').textContent=`(시간대 ${slots.size} · 공용실 ${specialTotal} · 외박 ${overCnt})`;
 }
 
 function stTag(s){return s?`<span class="st ${s==='O'?'o':'x'}">${s}</span>`:'<span class="st"></span>';}
@@ -1022,17 +1092,24 @@ function renderMatchPanel(){
   const c=document.getElementById('match-content');
   if(allRecords.length===0){ c.innerHTML='<div class="empty-msg"><div class="empty-icon">🔍</div>공용실 명단을 붙여넣고<br><b>공용실 추가</b>를 누르면<br>시간대별로 누적됩니다.</div>'; return; }
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
-  const outCnt=Object.keys(timeline).filter(s=>!overnight[s]).length;
-  const noSeatRecords=allRecords.filter(r=>!r.bSeat && overlapCommon(r.time));
+  const outCnt=Object.keys(timeline).filter(s=>!overnight[s] && !leaveSeats[s]).length;
+  const noSeatRecords=allRecords.filter(r=>!r.bSeat && overlapCommon(r.time, r.date));
   const noSeatUnique={};
-  noSeatRecords.forEach(r=>{ const k=r.sid+'|'+r.name; if(!noSeatUnique[k]) noSeatUnique[k]=r; });
-  const noSeatCnt=Object.keys(noSeatUnique).length;
-  let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · B/D실 공용실 <b style="color:#5a4bd0">${outCnt}</b>명${noSeatCnt ? ` · 기타 <b style="color:#888">${noSeatCnt}</b>명` : ''}</div><div class="scroll">`;
+  noSeatRecords.forEach(r=>{
+    const k=(r.sid||'')+'|'+r.name;
+    if(!noSeatUnique[k]) noSeatUnique[k]={sid:r.sid, name:r.name, ban:r.ban, entries:[]};
+    noSeatUnique[k].entries.push(r);
+  });
+  const noSeatList=Object.values(noSeatUnique).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+  const noSeatCnt=noSeatList.length;
+  const specialTotal = outCnt + noSeatCnt;
+  
+  let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · 공용실 <b style="color:#5a4bd0">${specialTotal}</b>명 (B/D실 ${outCnt}명${noSeatCnt ? ` · 기타 <b style="color:#888">${noSeatCnt}</b>명` : ''})</div><div class="scroll">`;
   slotList.forEach(slot=>{
     const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     const noSeatIn=allRecords.filter(r=>!r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     const totalIn=bIn.length+noSeatIn.length;
-    html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">${totalIn}명</span></div>`;
+    html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">${totalIn}명 (B/D실 ${bIn.length}${noSeatIn.length ? ` · 기타 ${noSeatIn.length}` : ''})</span></div>`;
     html+=`<div class="items-grid">`;
     if(totalIn){
       html+= bIn.map(r=>{
@@ -1041,7 +1118,7 @@ function renderMatchPanel(){
         return `<div class="item hit${dCls}"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
       }).join('');
       html+= noSeatIn.map(r=>{
-        return `<div class="item hit" style="border-color:#d0ccc0;background:#f9f8f4"><span class="sid" style="color:#999">${r.sid||'—'}</span><span class="nm" style="color:#666">${r.name} <span style="color:#bbb;font-weight:400;font-size:10px">기타</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
+        return `<div class="item hit" style="border-color:#d8d2c4;background:#faf8f3"><span class="sid" style="color:#888">${r.sid||'—'}</span><span class="nm" style="color:#444">${r.name}${r.ban?` <span style="color:#999;font-size:10px">${r.ban}반</span>`:''} <span style="color:#888;font-weight:600;font-size:9px;background:#eee;padding:1px 4px;border-radius:3px">기타</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
       }).join('');
     } else {
       html+='<div style="font-size:11px;color:#bbb;padding:2px 4px 4px">학생 없음</div>';
@@ -1049,17 +1126,26 @@ function renderMatchPanel(){
     html+='</div></div>';
   });
   html+='</div>';
+  
   const tlKeys=Object.keys(timeline).filter(seat=>!overnight[seat]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
-  html+=`<details><summary>👣 학생별 이동 흐름 · ${tlKeys.length}명</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`;
-  tlKeys.forEach(seat=>{const tl=timeline[seat];const es=[...tl.entries].sort((a,b)=>startMin(a.time)-startMin(b.time));
+  const totalFlowCount = tlKeys.length + noSeatList.length;
+  html+=`<details><summary>👣 학생별 이동 흐름 · ${totalFlowCount}명 (B/D실 ${tlKeys.length}명${noSeatList.length?` · 기타 ${noSeatList.length}명`:''})</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`;
+  tlKeys.forEach(seat=>{
+    const tl=timeline[seat];const es=[...tl.entries].sort((a,b)=>startMin(a.time)-startMin(b.time));
     const isD = seat.startsWith('D');
     const dCls = isD ? ' d-student' : '';
     html+=`<div class="flow${dCls}" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0;"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}<span class="seatid">${seat}</span></div>`+
-      es.map(e=>`<span class="chip"><span class="ct">${shortTime(e.time)}</span> ${shortPlace(e.place)} <span class="${e.status==='X'?'cx':'ct'}">${e.status}</span></span>`).join('')+'</div>';});
-  if(!tlKeys.length) html+='<div style="font-size:11px;color:#bbb;padding:4px">없음</div>';
+      es.map(e=>`<span class="chip"><span class="ct">${shortTime(e.time)}</span> ${shortPlace(e.place)} <span class="${e.status==='X'?'cx':'ct'}">${e.status}</span></span>`).join('')+'</div>';
+  });
+  noSeatList.forEach(s=>{
+    const es=[...s.entries].sort((a,b)=>startMin(a.time)-startMin(b.time));
+    html+=`<div class="flow" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0; border-color:#d8d2c4; background:#faf8f3"><div class="who" style="color:#555">${s.sid||'—'} ${s.name}${s.ban?`(${s.ban}반)`:''}<span class="seatid" style="background:#eee;color:#888">기타</span></div>`+
+      es.map(e=>`<span class="chip"><span class="ct">${shortTime(e.time)}</span> ${shortPlace(e.place)} <span class="${e.status==='X'?'cx':'ct'}">${e.status}</span></span>`).join('')+'</div>';
+  });
+  if(!totalFlowCount) html+='<div style="font-size:11px;color:#bbb;padding:4px">없음</div>';
   html+='</div></div></details>';
   c.innerHTML=html;
-  c.innerHTML+=`<button class="btn-copy" onclick="copyHits()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>시간대별 B/D실 공용실 복사</button>`;
+  c.innerHTML+=`<button class="btn-copy" onclick="copyHits()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>시간대별 공용실 복사</button>`;
 }
 
 function renderOverPanel(){
