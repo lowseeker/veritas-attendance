@@ -550,6 +550,18 @@ function extractDate(str) {
   return null;
 }
 
+// "20:20 ~ 21:00", "20:20～21:00", "20:20-21:00" → "20:20 ~ 21:00"
+// 종료시간이 없는 경우("20:20 ~", "20:20") → "20:20 ~"
+function extractTime(str) {
+  const range = (str || '').match(/(\d{1,2}:\d{2})\s*[~～〜\-–]\s*(\d{1,2}:\d{2})/);
+  if (range) return range[1] + ' ~ ' + range[2];
+  const single = (str || '').match(/\d{1,2}:\d{2}/);
+  return single ? single[0] + ' ~' : '';
+}
+
+const NO_TIME_SLOT = '시간 미상';
+function slotOf(r) { return r.time || NO_TIME_SLOT; }
+
 function parseTimeRange(timeStr) {
   const m = (timeStr || '').match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
   if (!m) return null;
@@ -596,7 +608,7 @@ function rebuildTimeline() {
     if (r.bSeat && seatMeta[r.bSeat]) r.ban = seatMeta[r.bSeat].ban;
 
     if (!overlapCommon(r.time, r.date)) return;
-    if (r.time) slots.add(r.time);
+    slots.add(slotOf(r));
     if (r.bSeat) {
       const seat = r.bSeat;
       const tl = timeline[seat] || (timeline[seat] = {seat, name: r.name, sid: r.sid, ban: r.ban, entries: []});
@@ -895,12 +907,7 @@ function parseCommon(raw){
       const foundName = nameM ? nameM[0] : (latinNameM ? latinNameM[0] : null);
       if (foundName && foundName !== '교사') {
         const name = nameAlias[foundName] || foundName;
-        const timeM = cleanedLine.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
-        let time = '';
-        if (timeM) {
-          const parts = timeM[0].split('~');
-          time = parts[0].trim() + ' ~ ' + parts[1].trim();
-        }
+        const time = extractTime(cleanedLine);
         let statM = cleanedLine.match(/[OXox○×]\s*$/);
         let status = statM ? statM[0].trim().toUpperCase() : '';
         if (status === '○') status = 'O';
@@ -915,12 +922,7 @@ function parseCommon(raw){
           place: place || '(미상)'
         });
       } else {
-        const timeM = cleanedLine.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
-        let time = '';
-        if (timeM) {
-          const parts = timeM[0].split('~');
-          time = parts[0].trim() + ' ~ ' + parts[1].trim();
-        }
+        const time = extractTime(cleanedLine);
         
         let name = '';
         if (i + 1 < lines.length) {
@@ -1107,8 +1109,8 @@ function renderMatchPanel(){
   
   let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · 공용실 <b style="color:#5a4bd0">${specialTotal}</b>명 (B/D실 ${outCnt}명${noSeatCnt ? ` · 기타 <b style="color:#888">${noSeatCnt}</b>명` : ''})</div><div class="scroll">`;
   slotList.forEach(slot=>{
-    const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-    const noSeatIn=allRecords.filter(r=>!r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const bIn=allRecords.filter(r=>r.bSeat&&slotOf(r)===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const noSeatIn=allRecords.filter(r=>!r.bSeat&&slotOf(r)===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     const totalIn=bIn.length+noSeatIn.length;
     html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">${totalIn}명 (B/D실 ${bIn.length}${noSeatIn.length ? ` · 기타 ${noSeatIn.length}` : ''})</span></div>`;
     html+=`<div class="items-grid">`;
@@ -1231,8 +1233,8 @@ function copyHits(){
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
   let t=`[2학년 B/D실 공용실 — 시간대별 누적] ${nowStr()}\n시간대 ${slotList.length}개\n`;
   slotList.forEach(slot=>{
-    const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-    const noSeatIn=allRecords.filter(r=>!r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const bIn=allRecords.filter(r=>r.bSeat&&slotOf(r)===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const noSeatIn=allRecords.filter(r=>!r.bSeat&&slotOf(r)===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     const allIn=[...bIn,...noSeatIn];
     t+=`\n■ ${slot} (${allIn.length}명)\n`+(allIn.length?allIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat||'기타'}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
