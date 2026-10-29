@@ -308,7 +308,7 @@ const seats = {
   "B030":null, "B029":"김지우", "B028":"공다영", "B027":"송채영", "B026":"한가민", "B025":null,
   "B024":null, "B023":"김효은", "B022":"임연우", "B021":"이재연", "B020":"김민희", "B019":null,
   "B018":null, "B017":"전슬아", "B016":"남은율", "B015":"최여은", "B014":"정시우", "B013":null,
-  "B012":"홍수빈", "B011":"김우림", "B010":"이소연", "B009":null,     "B008":"안정원", "B007":null,
+  "B012":"홍수빈", "B011":"김우림", "B010":"이소연", "B009":"신은채", "B008":"안정원", "B007":null,
   "B006":null, "B005":null, "B004":null, "B003":null, "B002":null, "B001":null,
 
   "B067":"이하얀", "B068":"김비슬", "B069":"전서아", "B070":"이시현", "B071":"오연서", "B072":null,
@@ -317,7 +317,7 @@ const seats = {
   "B085":"고윤지", "B086":"문규빈", "B087":"최지원", "B088":"이유경", "B089":null,
   "B090":"이하윤", "B091":"김보민", "B092":"이다은", "B093":null,
   "B094":null, "B095":"김나현", "B096":"김지혜", "B097":"고다영", "B098":"박예림", "B099":null,
-  "B100":null,     "B101":"박서연", "B102":"윤하영", "B103":"문채은", "B104":null,
+  "B100":"이지우", "B101":"박서연", "B102":"윤하영", "B103":"문채은", "B104":null,
   "B105":"교사", "B106":null, "B107":"박소윤", "B108":null,     "B109":null,
   
   // 남학생 D실 (2학년 79~109번)
@@ -378,15 +378,27 @@ const nameAlias = {
   'BATKHISHIG': '에네'
 };
 
-// 휴사 학생 설정 (복귀 시 이 객체에서 좌석 항목을 삭제하거나 주석 처리하면 바로 원상 복구됩니다)
+// 휴사 학생 설정 (복귀 시 이 객체에서 좌석 항목을 삭제하거나 returnDate를 설정하면 해당 날짜부터 자동 복구됩니다)
 const leaveSeats = {
-  "B090": { name: "이하윤", status: "휴사" }
+  "B012": { name: "홍수빈", status: "휴사" },
+  "B090": { name: "이하윤", status: "휴사", returnDate: "2026-11-01" }
 };
+
+function isLeaveSeat(id) {
+  const lv = leaveSeats[id];
+  if (!lv) return false;
+  if (lv.returnDate) {
+    const el = document.getElementById('study-date');
+    const curDate = (el && el.value) ? el.value : getTodayStr();
+    if (curDate >= lv.returnDate) return false;
+  }
+  return true;
+}
 
 const bNameToSeats={};
 for(const id in seats){
   const n=seats[id];
-  if(n && n!=='교사' && !leaveSeats[id]){
+  if(n && n!=='교사'){
     (bNameToSeats[n]=bNameToSeats[n]||[]).push(id);
   }
 }
@@ -549,18 +561,6 @@ function extractDate(str) {
   return null;
 }
 
-// "20:20 ~ 21:00", "20:20～21:00", "20:20-21:00" → "20:20 ~ 21:00"
-// 종료시간이 없는 경우("20:20 ~", "20:20") → "20:20 ~"
-function extractTime(str) {
-  const range = (str || '').match(/(\d{1,2}:\d{2})\s*[~～〜\-–]\s*(\d{1,2}:\d{2})/);
-  if (range) return range[1] + ' ~ ' + range[2];
-  const single = (str || '').match(/\d{1,2}:\d{2}/);
-  return single ? single[0] + ' ~' : '';
-}
-
-const NO_TIME_SLOT = '시간 미상';
-function slotOf(r) { return r.time || NO_TIME_SLOT; }
-
 function parseTimeRange(timeStr) {
   const m = (timeStr || '').match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
   if (!m) return null;
@@ -602,12 +602,12 @@ function rebuildTimeline() {
   allRecords.forEach(r => {
     const info = parseSid(r.sid);
     r.bSeat = (info.grade === 2 || info.grade == null) ? resolveSeat(r.name, info) : null;
-    if (r.bSeat && leaveSeats[r.bSeat]) r.bSeat = null;
+    if (r.bSeat && isLeaveSeat(r.bSeat)) r.bSeat = null;
     if (!r.ban && info.ban) r.ban = info.ban;
     if (r.bSeat && seatMeta[r.bSeat]) r.ban = seatMeta[r.bSeat].ban;
 
     if (!overlapCommon(r.time, r.date)) return;
-    slots.add(slotOf(r));
+    if (r.time) slots.add(r.time);
     if (r.bSeat) {
       const seat = r.bSeat;
       const tl = timeline[seat] || (timeline[seat] = {seat, name: r.name, sid: r.sid, ban: r.ban, entries: []});
@@ -618,7 +618,7 @@ function rebuildTimeline() {
 }
 
 function getIntegratedText(){
-  const specialSeats=Object.keys(timeline).filter(s=>!leaveSeats[s]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
+  const specialSeats=Object.keys(timeline).filter(s=>!overnight[s] && !isLeaveSeat(s)).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
   // Collect seatless common room students
   const noSeatCommon={};
   allRecords.filter(r=>!r.bSeat && overlapCommon(r.time, r.date)).forEach(r=>{
@@ -627,8 +627,8 @@ function getIntegratedText(){
     noSeatCommon[k].places.push(shortPlace(r.place));
   });
   const noSeatList=Object.values(noSeatCommon).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-  const overSeats=Object.keys(overnight).filter(s=>!leaveSeats[s]).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
-  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id] && !leaveSeats[id]);
+  const overSeats=Object.keys(overnight).filter(s=>!isLeaveSeat(s)).sort((a,b)=>(overnight[a].sid||'').localeCompare(overnight[b].sid||''));
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id] && !isLeaveSeat(id));
   
   // Sort B실 first, then D실
   const absentSorted = filteredAbsent.sort((a, b) => {
@@ -647,7 +647,7 @@ function getIntegratedText(){
     specialSeats.forEach(seat=>{
       const tl=timeline[seat];
       const places=[...new Set(tl.entries.map(e=>shortPlace(e.place)))].join(', ');
-      t+=`${idx++}. ${tl.sid||seat} ${tl.name}${tl.ban?`(${tl.ban}반)`:''} [${seat}${overnight[seat]?' · 외박':''}] — ${places}\n`;
+      t+=`${idx++}. ${tl.sid||seat} ${tl.name}${tl.ban?`(${tl.ban}반)`:''} [${seat}] — ${places}\n`;
     });
     noSeatList.forEach(s=>{
       const places=[...new Set(s.places)].join(', ');
@@ -701,8 +701,10 @@ function classifyOver(){
   overIgnored.length=0;
   Object.values(overAll).forEach(r=>{
     if(!overlapStudy(r.startTs,r.endTs)){ overIgnored.push(r); return; }
-    const seat = (r.seat && !leaveSeats[r.seat]) ? r.seat : null;
-    if(seat) overnight[seat]={sid:r.sid,name:r.name,start:r.start,end:r.end,ban:r.ban};
+    const info = parseSid(r.sid);
+    const rawSeat = r.seat || ((info.grade===2||info.grade==null) ? resolveSeat(r.name, info, true) : null);
+    const seat = (rawSeat && !isLeaveSeat(rawSeat)) ? rawSeat : null;
+    if(seat) overnight[seat]={sid:r.sid,name:r.name,start:r.start,end:r.end,ban:r.ban || (seatMeta[seat]?seatMeta[seat].ban:info.ban)};
     else overOthers[r.sid]={sid:r.sid,name:r.name,start:r.start,end:r.end};
   });
 }
@@ -723,9 +725,11 @@ function onStudyChange(){
   }else{ classifyOver(); refreshAll(); }
 }
 
-function resolveSeat(name,info){
+function resolveSeat(name,info,ignoreLeave){
   const resolvedName = nameAlias[name] || name;
-  const cands=bNameToSeats[resolvedName]; if(!cands) return null;
+  const rawCands=bNameToSeats[resolvedName]; if(!rawCands) return null;
+  const cands = ignoreLeave ? rawCands : rawCands.filter(s => !isLeaveSeat(s));
+  if(!cands.length) return null;
   if(cands.length===1) return cands[0];
   if(info.ban!=null){
     const match = cands.find(s => {
@@ -750,12 +754,13 @@ function latestEntry(seat){
 function makeSeat(id){
   const el=document.createElement('div');
   if(!id){el.className='seat empty';return el;}
-  if(leaveSeats[id]){
+  if(isLeaveSeat(id)){
     const lv = leaveSeats[id];
+    const retNote = lv.returnDate ? ` (${lv.returnDate.slice(5).replace('-','.')} 복귀)` : '';
     el.className='seat no-student leave-seat';
     el.style.cssText='background:#f6f5f1;border-color:#dcd8d0;cursor:default;';
     el.innerHTML=`<span class="seat-num" style="color:#999">${id}</span><span class="seat-name" style="color:#777;font-size:11px;font-weight:700">휴사</span><span class="seat-sid" style="color:#aaa;font-size:9px">${lv.name}</span>`;
-    el.title = `${id} ${lv.name} (휴사 - 복귀 시 해제 가능)`;
+    el.title = `${id} ${lv.name} (휴사${retNote} - 복귀 시 해제)`;
     return el;
   }
   const name=seats[id];
@@ -815,7 +820,7 @@ function renderGrid(){
 
 function applySeatStates(){
   for(const id in seats){
-    if(leaveSeats[id]) continue;
+    if(isLeaveSeat(id)) continue;
     const name=seats[id];if(!name||name==='교사')continue;
     const el=document.getElementById('seat-'+id);if(!el)continue;
     let cls='seat';
@@ -834,7 +839,7 @@ function applySeatStates(){
 
 /* ── 결석 ── */
 function toggleAbsent(id){
-  if(leaveSeats[id]) return;
+  if(isLeaveSeat(id)) return;
   if(firebaseReady){
     if(absentSet.has(id)) absentRef.child(id).remove();
     else absentRef.child(id).set(true);
@@ -845,12 +850,12 @@ function toggleAbsent(id){
 }
 
 function updateAbsentPanel(){
-  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
-  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
+  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사' && !isLeaveSeat(id)).length;
+  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사' && !isLeaveSeat(id)).length;
   document.getElementById('b-total-count').textContent = totalB;
   document.getElementById('d-total-count').textContent = totalD;
   
-  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id] && !leaveSeats[id]);
+  const filteredAbsent = [...absentSet].filter(id => !timeline[id] && !overnight[id] && !isLeaveSeat(id));
   document.getElementById('absent-count').textContent=filteredAbsent.length;
   document.getElementById('tab-absent-b').textContent=filteredAbsent.length;
   
@@ -906,7 +911,12 @@ function parseCommon(raw){
       const foundName = nameM ? nameM[0] : (latinNameM ? latinNameM[0] : null);
       if (foundName && foundName !== '교사') {
         const name = nameAlias[foundName] || foundName;
-        const time = extractTime(cleanedLine);
+        const timeM = cleanedLine.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
+        let time = '';
+        if (timeM) {
+          const parts = timeM[0].split('~');
+          time = parts[0].trim() + ' ~ ' + parts[1].trim();
+        }
         let statM = cleanedLine.match(/[OXox○×]\s*$/);
         let status = statM ? statM[0].trim().toUpperCase() : '';
         if (status === '○') status = 'O';
@@ -921,7 +931,12 @@ function parseCommon(raw){
           place: place || '(미상)'
         });
       } else {
-        const time = extractTime(cleanedLine);
+        const timeM = cleanedLine.match(/\d{1,2}:\d{2}\s*~\s*\d{1,2}:\d{2}/);
+        let time = '';
+        if (timeM) {
+          const parts = timeM[0].split('~');
+          time = parts[0].trim() + ' ~ ' + parts[1].trim();
+        }
         
         let name = '';
         if (i + 1 < lines.length) {
@@ -988,7 +1003,7 @@ function addCommon(){
     if(seenKeys.has(key)){dup++;return;}
     const info=parseSid(r.sid);
     const seat=(info.grade===2||info.grade==null)?resolveSeat(r.name,info):null;
-    r.bSeat=(seat && !leaveSeats[seat])?seat:null; r.grade=info.grade; r.ban=seat&&seatMeta[seat]?seatMeta[seat].ban:info.ban;
+    r.bSeat=(seat && !isLeaveSeat(seat))?seat:null; r.grade=info.grade; r.ban=seat&&seatMeta[seat]?seatMeta[seat].ban:info.ban;
     processed.push(r); added++;
   });
   if(added===0){ showToast(dup?`중복 ${dup}건, 새 항목 없음`:'인식된 항목 없음'); return; }
@@ -1037,7 +1052,7 @@ function addOvernight(){
     const updates={};
     recs.forEach(r=>{
       const info=parseSid(r.sid);
-      const seat=(info.grade===2||info.grade==null)?resolveSeat(r.name,info):null;
+      const seat=(info.grade===2||info.grade==null)?resolveSeat(r.name,info,true):null;
       const overKey=r.sid+'|'+r.start;
       updates[fbKey(overKey)]={sid:r.sid,name:r.name,start:r.start,end:r.end,startTs:dtTs(r.start),endTs:dtTs(r.end),seat,ban:seat&&seatMeta[seat]?seatMeta[seat].ban:info.ban};
     });
@@ -1045,7 +1060,7 @@ function addOvernight(){
   }else{
     recs.forEach(r=>{
       const info=parseSid(r.sid);
-      const seat=(info.grade===2||info.grade==null)?resolveSeat(r.name,info):null;
+      const seat=(info.grade===2||info.grade==null)?resolveSeat(r.name,info,true):null;
       const overKey=r.sid+'|'+r.start;
       overAll[overKey]={sid:r.sid,name:r.name,start:r.start,end:r.end,startTs:dtTs(r.start),endTs:dtTs(r.end),seat,ban:seat&&seatMeta[seat]?seatMeta[seat].ban:info.ban};
     });
@@ -1061,13 +1076,13 @@ function addOvernight(){
 function refreshAll(){ rebuildTimeline(); renderGrid(); renderMatchPanel(); renderOverPanel(); updateHeaderCounts(); updateAbsentPanel(); }
 
 function updateHeaderCounts(){
-  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
-  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사' && !leaveSeats[id]).length;
+  const totalB = Object.keys(seats).filter(id => id.startsWith('B') && seats[id] && seats[id] !== '교사' && !isLeaveSeat(id)).length;
+  const totalD = Object.keys(seats).filter(id => id.startsWith('D') && seats[id] && seats[id] !== '교사' && !isLeaveSeat(id)).length;
   document.getElementById('b-total-count').textContent = totalB;
   document.getElementById('d-total-count').textContent = totalD;
   
   document.getElementById('slot-count').textContent=slots.size;
-  const specialBDSit = Object.keys(timeline).filter(s=>!leaveSeats[s]).length;
+  const specialBDSit = Object.keys(timeline).filter(s=>!overnight[s] && !isLeaveSeat(s)).length;
   
   // Count unique non-seat students in active study window
   const noSeatRecords=allRecords.filter(r=>!r.bSeat && overlapCommon(r.time, r.date));
@@ -1077,7 +1092,7 @@ function updateHeaderCounts(){
   const specialTotal = specialBDSit + noSeatCnt;
 
   document.getElementById('special-count').textContent=specialTotal;
-  const overCnt = Object.keys(overnight).filter(s=>!leaveSeats[s]).length;
+  const overCnt = Object.keys(overnight).filter(s=>!isLeaveSeat(s)).length;
   document.getElementById('over-count').textContent=overCnt;
   
   document.getElementById('tab-special-b').textContent=specialTotal;
@@ -1094,7 +1109,7 @@ function renderMatchPanel(){
   const c=document.getElementById('match-content');
   if(allRecords.length===0){ c.innerHTML='<div class="empty-msg"><div class="empty-icon">🔍</div>공용실 명단을 붙여넣고<br><b>공용실 추가</b>를 누르면<br>시간대별로 누적됩니다.</div>'; return; }
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
-  const outCnt=Object.keys(timeline).filter(s=>!leaveSeats[s]).length;
+  const outCnt=Object.keys(timeline).filter(s=>!overnight[s] && !isLeaveSeat(s)).length;
   const noSeatRecords=allRecords.filter(r=>!r.bSeat && overlapCommon(r.time, r.date));
   const noSeatUnique={};
   noSeatRecords.forEach(r=>{
@@ -1108,8 +1123,8 @@ function renderMatchPanel(){
   
   let html=`<div class="summary">누적 <b>${allRecords.length}</b>건 · 시간대 <b>${slotList.length}</b>개 · 공용실 <b style="color:#5a4bd0">${specialTotal}</b>명 (B/D실 ${outCnt}명${noSeatCnt ? ` · 기타 <b style="color:#888">${noSeatCnt}</b>명` : ''})</div><div class="scroll">`;
   slotList.forEach(slot=>{
-    const bIn=allRecords.filter(r=>r.bSeat&&slotOf(r)===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-    const noSeatIn=allRecords.filter(r=>!r.bSeat&&slotOf(r)===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const noSeatIn=allRecords.filter(r=>!r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     const totalIn=bIn.length+noSeatIn.length;
     html+=`<div class="slot"><div class="slot-head">⏱ ${slot} <span class="cnt">${totalIn}명 (B/D실 ${bIn.length}${noSeatIn.length ? ` · 기타 ${noSeatIn.length}` : ''})</span></div>`;
     html+=`<div class="items-grid">`;
@@ -1117,7 +1132,7 @@ function renderMatchPanel(){
       html+= bIn.map(r=>{
         const isD = r.bSeat && r.bSeat.startsWith('D');
         const dCls = isD ? ' d-student' : '';
-        return `<div class="item hit${dCls}"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span>${overnight[r.bSeat]?' <span style="color:#c77400;font-weight:700;font-size:9px;background:#fff1dc;padding:1px 4px;border-radius:3px">외박</span>':''}</span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
+        return `<div class="item hit${dCls}"><span class="sid">${r.sid||'—'}</span><span class="nm">${r.name}${r.ban?` <span style="color:#c07000;font-size:10px">${r.ban}반</span>`:''} <span style="color:#bbb;font-weight:400;font-size:10px">${r.bSeat}</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
       }).join('');
       html+= noSeatIn.map(r=>{
         return `<div class="item hit" style="border-color:#d8d2c4;background:#faf8f3"><span class="sid" style="color:#888">${r.sid||'—'}</span><span class="nm" style="color:#444">${r.name}${r.ban?` <span style="color:#999;font-size:10px">${r.ban}반</span>`:''} <span style="color:#888;font-weight:600;font-size:9px;background:#eee;padding:1px 4px;border-radius:3px">기타</span></span><span class="pl">${shortPlace(r.place)}</span>${stTag(r.status)}</div>`;
@@ -1129,14 +1144,14 @@ function renderMatchPanel(){
   });
   html+='</div>';
   
-  const tlKeys=Object.keys(timeline).filter(seat=>!leaveSeats[seat]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
+  const tlKeys=Object.keys(timeline).filter(seat=>!overnight[seat]).sort((a,b)=>(timeline[a].sid||'').localeCompare(timeline[b].sid||''));
   const totalFlowCount = tlKeys.length + noSeatList.length;
   html+=`<details><summary>👣 학생별 이동 흐름 · ${totalFlowCount}명 (B/D실 ${tlKeys.length}명${noSeatList.length?` · 기타 ${noSeatList.length}명`:''})</summary><div class="scroll" style="margin-top:8px"><div class="items-grid">`;
   tlKeys.forEach(seat=>{
     const tl=timeline[seat];const es=[...tl.entries].sort((a,b)=>startMin(a.time)-startMin(b.time));
     const isD = seat.startsWith('D');
     const dCls = isD ? ' d-student' : '';
-    html+=`<div class="flow${dCls}" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0;"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}${overnight[seat]?' <span style="color:#c77400;font-weight:700;font-size:9px;background:#fff1dc;padding:1px 4px;border-radius:3px">외박</span>':''}<span class="seatid">${seat}</span></div>`+
+    html+=`<div class="flow${dCls}" style="flex: 1 1 calc(25% - 8px); min-width: 220px; max-width: calc(33.33% - 8px); margin-bottom: 0;"><div class="who">${tl.sid||'—'} ${tl.name}${tl.ban?`(${tl.ban}반)`:''}<span class="seatid">${seat}</span></div>`+
       es.map(e=>`<span class="chip"><span class="ct">${shortTime(e.time)}</span> ${shortPlace(e.place)} <span class="${e.status==='X'?'cx':'ct'}">${e.status}</span></span>`).join('')+'</div>';
   });
   noSeatList.forEach(s=>{
@@ -1232,8 +1247,8 @@ function copyHits(){
   const slotList=[...slots].sort((a,b)=>startMin(a)-startMin(b));
   let t=`[2학년 B/D실 공용실 — 시간대별 누적] ${nowStr()}\n시간대 ${slotList.length}개\n`;
   slotList.forEach(slot=>{
-    const bIn=allRecords.filter(r=>r.bSeat&&slotOf(r)===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
-    const noSeatIn=allRecords.filter(r=>!r.bSeat&&slotOf(r)===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const bIn=allRecords.filter(r=>r.bSeat&&r.time===slot&&!overnight[r.bSeat]).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
+    const noSeatIn=allRecords.filter(r=>!r.bSeat&&r.time===slot).sort((a,b)=>(a.sid||'').localeCompare(b.sid||''));
     const allIn=[...bIn,...noSeatIn];
     t+=`\n■ ${slot} (${allIn.length}명)\n`+(allIn.length?allIn.map((r,i)=>`${i+1}. ${r.sid||'—'} ${r.name}${r.ban?`(${r.ban}반)`:''} [${r.bSeat||'기타'}] — ${shortPlace(r.place)} ${r.status}`).join('\n'):'없음');});
   doCopy(t);
